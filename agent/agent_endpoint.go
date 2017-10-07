@@ -514,6 +514,57 @@ func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Reques
 	return nil, nil
 }
 
+func (s *HTTPServer) AgentHealthService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if req.Method != "GET" {
+		return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
+	}
+
+	// Pull out the service id (service id since there may be several instance of the same service on this host)
+	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/")
+	if serviceID == "" {
+		resp.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(resp, "Missing service id")
+		return nil, nil
+	}
+
+	checks := s.agent.State.Checks()
+	// TODO: should we filter using acls like in AgentChecks method?
+	serviceChecks := make(api.HealthChecks, 0)
+	for _, c := range checks {
+		if c.ServiceID == serviceID {
+			// TODO: harmonize struct.HealthCheck and api.HealthCheck (or at least extract conversion function)
+			healthCheck := &api.HealthCheck{
+				Node:        c.Node,
+				CheckID:     string(c.CheckID),
+				Name:        c.Name,
+				Status:      c.Status,
+				Notes:       c.Notes,
+				Output:      c.Output,
+				ServiceID:   c.ServiceID,
+				ServiceName: c.ServiceName,
+				ServiceTags: c.ServiceTags,
+			}
+			serviceChecks = append(serviceChecks, healthCheck)
+		}
+	}
+	if len(serviceChecks) == 0 {
+		resp.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(resp, "Invalid serviceID %s", serviceID)
+		return nil, nil
+	}
+	status := serviceChecks.AggregatedStatus()
+	switch status {
+	case api.HealthWarning:
+		resp.WriteHeader(http.StatusTooManyRequests)
+	case api.HealthPassing:
+		resp.WriteHeader(http.StatusOK)
+	default:
+		resp.WriteHeader(http.StatusServiceUnavailable)
+	}
+	fmt.Fprint(resp, status)
+	return nil, nil
+}
+
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	if req.Method != "PUT" {
 		return nil, MethodNotAllowedError{req.Method, []string{"PUT"}}

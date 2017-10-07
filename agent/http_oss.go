@@ -21,6 +21,7 @@ func init() {
 	registerEndpoint("/v1/agent/join/", (*HTTPServer).AgentJoin)
 	registerEndpoint("/v1/agent/leave", (*HTTPServer).AgentLeave)
 	registerEndpoint("/v1/agent/force-leave/", (*HTTPServer).AgentForceLeave)
+	registerEndpoint("/v1/agent/health/service/", (*HTTPServer).AgentHealthService)
 	registerEndpoint("/v1/agent/check/register", (*HTTPServer).AgentRegisterCheck)
 	registerEndpoint("/v1/agent/check/deregister/", (*HTTPServer).AgentDeregisterCheck)
 	registerEndpoint("/v1/agent/check/pass/", (*HTTPServer).AgentCheckPass)
