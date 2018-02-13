@@ -133,7 +133,7 @@ func TestAgent_Checks(t *testing.T) {
 	}
 }
 
-func TestAgent_Health_Service(t *testing.T) {
+func TestAgent_Health_Service_Id(t *testing.T) {
 	t.Parallel()
 	a := NewTestAgent(t.Name(), "")
 	defer a.Shutdown()
@@ -167,7 +167,7 @@ func TestAgent_Health_Service(t *testing.T) {
 		ServiceID: "mysql",
 		Status:    api.HealthPassing,
 	}
-	err := a.state.AddCheck(chk1, "")
+	err := a.State.AddCheck(chk1, "")
 	if err != nil {
 		t.Fatalf("Err: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestAgent_Health_Service(t *testing.T) {
 		ServiceID: "mysql",
 		Status:    api.HealthPassing,
 	}
-	err = a.state.AddCheck(chk2, "")
+	err = a.State.AddCheck(chk2, "")
 	if err != nil {
 		t.Fatalf("Err: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestAgent_Health_Service(t *testing.T) {
 		ServiceID: "mysql2",
 		Status:    api.HealthPassing,
 	}
-	err = a.state.AddCheck(chk3, "")
+	err = a.State.AddCheck(chk3, "")
 	if err != nil {
 		t.Fatalf("Err: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestAgent_Health_Service(t *testing.T) {
 		ServiceID: "mysql2",
 		Status:    api.HealthWarning,
 	}
-	err = a.state.AddCheck(chk4, "")
+	err = a.State.AddCheck(chk4, "")
 	if err != nil {
 		t.Fatalf("Err: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestAgent_Health_Service(t *testing.T) {
 		ServiceID: "mysql3",
 		Status:    api.HealthMaint,
 	}
-	err = a.state.AddCheck(chk5, "")
+	err = a.State.AddCheck(chk5, "")
 	if err != nil {
 		t.Fatalf("Err: %v", err)
 	}
@@ -227,15 +227,15 @@ func TestAgent_Health_Service(t *testing.T) {
 		ServiceID: "mysql3",
 		Status:    api.HealthCritical,
 	}
-	err = a.state.AddCheck(chk6, "")
+	err = a.State.AddCheck(chk6, "")
 	if err != nil {
 		t.Fatalf("Err: %v", err)
 	}
 
 	t.Run("passing checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/mysql", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql", nil)
 		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthService(resp, req)
+		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
 			t.Fatalf("Err: %v", err)
 		}
@@ -247,9 +247,9 @@ func TestAgent_Health_Service(t *testing.T) {
 		}
 	})
 	t.Run("warning checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/mysql2", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql2", nil)
 		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthService(resp, req)
+		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
 			t.Fatalf("Err: %v", err)
 		}
@@ -261,9 +261,9 @@ func TestAgent_Health_Service(t *testing.T) {
 		}
 	})
 	t.Run("critical checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/mysql3", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql3", nil)
 		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthService(resp, req)
+		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
 			t.Fatalf("Err: %v", err)
 		}
@@ -275,16 +275,226 @@ func TestAgent_Health_Service(t *testing.T) {
 		}
 	})
 	t.Run("unknown serviceid", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/mysql1", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql1", nil)
 		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthService(resp, req)
+		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
 			t.Fatalf("Err: %v", err)
 		}
 		if got, want := resp.Code, 400; got != want {
 			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
 		}
-		if got, want := resp.Body.String(), "Invalid serviceID mysql1"; got != want {
+		if got, want := resp.Body.String(), "Invalid ServiceID mysql1"; got != want {
+			t.Fatalf("got body %q want %q", got, want)
+		}
+	})
+}
+
+func TestAgent_Health_Service_Name(t *testing.T) {
+	t.Parallel()
+	a := NewTestAgent(t.Name(), "")
+	defer a.Shutdown()
+
+	service := &structs.NodeService{
+		ID:      "mysql1",
+		Service: "mysql-pool-r",
+	}
+	if err := a.AddService(service, nil, false, ""); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	service = &structs.NodeService{
+		ID:      "mysql2",
+		Service: "mysql-pool-r",
+	}
+	if err := a.AddService(service, nil, false, ""); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	service = &structs.NodeService{
+		ID:      "mysql3",
+		Service: "mysql-pool-rw",
+	}
+	if err := a.AddService(service, nil, false, ""); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	service = &structs.NodeService{
+		ID:      "mysql4",
+		Service: "mysql-pool-rw",
+	}
+	if err := a.AddService(service, nil, false, ""); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	service = &structs.NodeService{
+		ID:      "httpd1",
+		Service: "httpd",
+	}
+	if err := a.AddService(service, nil, false, ""); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	service = &structs.NodeService{
+		ID:      "httpd2",
+		Service: "httpd",
+	}
+	if err := a.AddService(service, nil, false, ""); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	chk1 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "mysql1",
+		Name:        "mysql1",
+		ServiceID:   "mysql1",
+		ServiceName: "mysql-pool-r",
+		Status:      api.HealthPassing,
+	}
+	err := a.State.AddCheck(chk1, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	chk2 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "mysql1",
+		Name:        "mysql1",
+		ServiceID:   "mysql1",
+		ServiceName: "mysql-pool-r",
+		Status:      api.HealthWarning,
+	}
+	err = a.State.AddCheck(chk2, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	chk3 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "mysql2",
+		Name:        "mysql2",
+		ServiceID:   "mysql2",
+		ServiceName: "mysql-pool-r",
+		Status:      api.HealthPassing,
+	}
+	err = a.State.AddCheck(chk3, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	chk4 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "mysql2",
+		Name:        "mysql2",
+		ServiceID:   "mysql2",
+		ServiceName: "mysql-pool-r",
+		Status:      api.HealthCritical,
+	}
+	err = a.State.AddCheck(chk4, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	chk5 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "mysql3",
+		Name:        "mysql3",
+		ServiceID:   "mysql3",
+		ServiceName: "mysql-pool-rw",
+		Status:      api.HealthWarning,
+	}
+	err = a.State.AddCheck(chk5, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	chk6 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "mysql4",
+		Name:        "mysql4",
+		ServiceID:   "mysql4",
+		ServiceName: "mysql-pool-rw",
+		Status:      api.HealthPassing,
+	}
+	err = a.State.AddCheck(chk6, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	chk7 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "httpd1",
+		Name:        "httpd1",
+		ServiceID:   "httpd1",
+		ServiceName: "httpd",
+		Status:      api.HealthPassing,
+	}
+	err = a.State.AddCheck(chk7, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	chk8 := &structs.HealthCheck{
+		Node:        a.Config.NodeName,
+		CheckID:     "httpd2",
+		Name:        "httpd2",
+		ServiceID:   "httpd2",
+		ServiceName: "httpd",
+		Status:      api.HealthPassing,
+	}
+	err = a.State.AddCheck(chk8, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+
+	t.Run("passing checks", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/httpd", nil)
+		resp := httptest.NewRecorder()
+		_, err := a.srv.AgentHealthServiceName(resp, req)
+		if err != nil {
+			t.Fatalf("Err: %v", err)
+		}
+		if got, want := resp.Code, 200; got != want {
+			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+		}
+		if got, want := resp.Body.String(), "passing"; got != want {
+			t.Fatalf("got body %q want %q", got, want)
+		}
+	})
+	t.Run("warning checks", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-rw", nil)
+		resp := httptest.NewRecorder()
+		_, err := a.srv.AgentHealthServiceName(resp, req)
+		if err != nil {
+			t.Fatalf("Err: %v", err)
+		}
+		if got, want := resp.Code, 429; got != want {
+			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+		}
+		if got, want := resp.Body.String(), "warning"; got != want {
+			t.Fatalf("got body %q want %q", got, want)
+		}
+	})
+	t.Run("critical checks", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r", nil)
+		resp := httptest.NewRecorder()
+		_, err := a.srv.AgentHealthServiceName(resp, req)
+		if err != nil {
+			t.Fatalf("Err: %v", err)
+		}
+		if got, want := resp.Code, 503; got != want {
+			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+		}
+		if got, want := resp.Body.String(), "critical"; got != want {
+			t.Fatalf("got body %q want %q", got, want)
+		}
+	})
+	t.Run("unknown serviceid", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/test", nil)
+		resp := httptest.NewRecorder()
+		_, err := a.srv.AgentHealthServiceName(resp, req)
+		if err != nil {
+			t.Fatalf("Err: %v", err)
+		}
+		if got, want := resp.Code, 400; got != want {
+			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+		}
+		if got, want := resp.Body.String(), "Invalid ServiceName test"; got != want {
 			t.Fatalf("got body %q want %q", got, want)
 		}
 	})

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -157,8 +158,8 @@ func (s *HTTPServer) AgentServices(resp http.ResponseWriter, req *http.Request) 
 
 func (s *HTTPServer) AgentChecks(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	if req.Method != "GET" {
-		return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
-	}
+        return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
+    }
 
 	// Fetch the ACL token, if any.
 	var token string
@@ -514,24 +515,13 @@ func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Reques
 	return nil, nil
 }
 
-func (s *HTTPServer) AgentHealthService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
-	if req.Method != "GET" {
-		return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
-	}
-
-	// Pull out the service id (service id since there may be several instance of the same service on this host)
-	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/")
-	if serviceID == "" {
-		resp.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(resp, "Missing service id")
-		return nil, nil
-	}
-
-	checks := s.agent.State.Checks()
-	// TODO: should we filter using acls like in AgentChecks method?
+func AgentHealthService(field string, value string, s *HTTPServer, resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+    checks := s.agent.State.Checks()
 	serviceChecks := make(api.HealthChecks, 0)
 	for _, c := range checks {
-		if c.ServiceID == serviceID {
+        reflectValue := reflect.ValueOf(c)
+        propertyValue := string(reflect.Indirect(reflectValue).FieldByName(field).String())
+		if propertyValue == value {
 			// TODO: harmonize struct.HealthCheck and api.HealthCheck (or at least extract conversion function)
 			healthCheck := &api.HealthCheck{
 				Node:        c.Node,
@@ -549,7 +539,7 @@ func (s *HTTPServer) AgentHealthService(resp http.ResponseWriter, req *http.Requ
 	}
 	if len(serviceChecks) == 0 {
 		resp.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(resp, "Invalid serviceID %s", serviceID)
+		fmt.Fprintf(resp, "Invalid %s %s", field, value)
 		return nil, nil
 	}
 	status := serviceChecks.AggregatedStatus()
@@ -563,6 +553,36 @@ func (s *HTTPServer) AgentHealthService(resp http.ResponseWriter, req *http.Requ
 	}
 	fmt.Fprint(resp, status)
 	return nil, nil
+}
+
+func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if req.Method != "GET" {
+		return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
+	}
+
+	// Pull out the service id (service id since there may be several instance of the same service on this host)
+	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/id/")
+	if serviceID == "" {
+		resp.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(resp, "Missing service id")
+		return nil, nil
+	}
+    return AgentHealthService("ServiceID", serviceID, s, resp, req)
+}
+
+func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if req.Method != "GET" {
+		return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
+	}
+
+	// Pull out the service name
+	serviceName := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/name/")
+	if serviceName == "" {
+		resp.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(resp, "Missing service name")
+		return nil, nil
+	}
+    return AgentHealthService("ServiceName", serviceName, s, resp, req)
 }
 
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
