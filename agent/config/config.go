@@ -341,6 +341,8 @@ type CheckDefinition struct {
 	Interval                       *string             `json:"interval,omitempty" hcl:"interval" mapstructure:"interval"`
 	DockerContainerID              *string             `json:"docker_container_id,omitempty" hcl:"docker_container_id" mapstructure:"docker_container_id"`
 	Shell                          *string             `json:"shell,omitempty" hcl:"shell" mapstructure:"shell"`
+	GRPC                           *string             `json:"grpc,omitempty" hcl:"grpc" mapstructure:"grpc"`
+	GRPCUseTLS                     *bool               `json:"grpc_use_tls,omitempty" hcl:"grpc_use_tls" mapstructure:"grpc_use_tls"`
 	TLSSkipVerify                  *bool               `json:"tls_skip_verify,omitempty" hcl:"tls_skip_verify" mapstructure:"tls_skip_verify"`
 	Timeout                        *string             `json:"timeout,omitempty" hcl:"timeout" mapstructure:"timeout"`
 	TTL                            *string             `json:"ttl,omitempty" hcl:"ttl" mapstructure:"ttl"`
@@ -349,6 +351,7 @@ type CheckDefinition struct {
 
 type DNS struct {
 	AllowStale         *bool             `json:"allow_stale,omitempty" hcl:"allow_stale" mapstructure:"allow_stale"`
+	ARecordLimit       *int              `json:"a_record_limit,omitempty" hcl:"a_record_limit" mapstructure:"a_record_limit"`
 	DisableCompression *bool             `json:"disable_compression,omitempty" hcl:"disable_compression" mapstructure:"disable_compression"`
 	EnableTruncate     *bool             `json:"enable_truncate,omitempty" hcl:"enable_truncate" mapstructure:"enable_truncate"`
 	MaxStale           *string           `json:"max_stale,omitempty" hcl:"max_stale" mapstructure:"max_stale"`

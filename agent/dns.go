@@ -47,6 +47,7 @@ type dnsConfig struct {
 	SegmentName     string
 	ServiceTTL      map[string]time.Duration
 	UDPAnswerLimit  int
+	ARecordLimit    int
 }
 
 // DNSServer is used to wrap an Agent and expose various
@@ -94,6 +95,7 @@ func NewDNSServer(a *Agent) (*DNSServer, error) {
 func GetDNSConfig(conf *config.RuntimeConfig) *dnsConfig {
 	return &dnsConfig{
 		AllowStale:      conf.DNSAllowStale,
+		ARecordLimit:    conf.DNSARecordLimit,
 		Datacenter:      conf.Datacenter,
 		EnableTruncate:  conf.DNSEnableTruncate,
 		MaxStale:        conf.DNSMaxStale,
@@ -107,24 +109,24 @@ func GetDNSConfig(conf *config.RuntimeConfig) *dnsConfig {
 	}
 }
 
-func (s *DNSServer) ListenAndServe(network, addr string, notif func()) error {
+func (d *DNSServer) ListenAndServe(network, addr string, notif func()) error {
 	mux := dns.NewServeMux()
-	mux.HandleFunc("arpa.", s.handlePtr)
-	mux.HandleFunc(s.domain, s.handleQuery)
-	if len(s.recursors) > 0 {
-		mux.HandleFunc(".", s.handleRecurse)
+	mux.HandleFunc("arpa.", d.handlePtr)
+	mux.HandleFunc(d.domain, d.handleQuery)
+	if len(d.recursors) > 0 {
+		mux.HandleFunc(".", d.handleRecurse)
 	}
 
-	s.Server = &dns.Server{
+	d.Server = &dns.Server{
 		Addr:              addr,
 		Net:               network,
 		Handler:           mux,
 		NotifyStartedFunc: notif,
 	}
 	if network == "udp" {
-		s.UDPSize = 65535
+		d.UDPSize = 65535
 	}
-	return s.Server.ListenAndServe()
+	return d.Server.ListenAndServe()
 }
 
 // recursorAddr is used to add a port to the recursor if omitted.
@@ -230,8 +232,8 @@ func (d *DNSServer) handleQuery(resp dns.ResponseWriter, req *dns.Msg) {
 			[]metrics.Label{{Name: "node", Value: d.agent.config.NodeName}})
 		metrics.MeasureSinceWithLabels([]string{"dns", "domain_query"}, s,
 			[]metrics.Label{{Name: "node", Value: d.agent.config.NodeName}})
-		d.logger.Printf("[DEBUG] dns: request for %v (%v) from client %s (%s)",
-			q, time.Since(s), resp.RemoteAddr().String(),
+		d.logger.Printf("[DEBUG] dns: request for name %v type %v class %v (took %v) from client %s (%s)",
+			q.Name, dns.Type(q.Qtype), dns.Class(q.Qclass), time.Since(s), resp.RemoteAddr().String(),
 			resp.RemoteAddr().Network())
 	}(time.Now())
 
@@ -974,6 +976,7 @@ func (d *DNSServer) serviceNodeRecords(dc string, nodes structs.CheckServiceNode
 	handled := make(map[string]struct{})
 	edns := req.IsEdns0() != nil
 
+	count := 0
 	for _, node := range nodes {
 		// Start with the translated address but use the service address,
 		// if specified.
@@ -999,6 +1002,11 @@ func (d *DNSServer) serviceNodeRecords(dc string, nodes structs.CheckServiceNode
 		records := d.formatNodeRecord(node.Node, addr, qName, qType, ttl, edns)
 		if records != nil {
 			resp.Answer = append(resp.Answer, records...)
+			count++
+			if count == d.config.ARecordLimit {
+				// We stop only if greater than 0 or we reached the limit
+				return
+			}
 		}
 	}
 }

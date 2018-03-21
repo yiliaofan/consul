@@ -125,7 +125,7 @@ func NewBuilder(flags Flags) (*Builder, error) {
 			Data:   s,
 		})
 	}
-	b.Tail = append(b.Tail, NonUserSource(), DefaultConsulSource(), DefaultVersionSource())
+	b.Tail = append(b.Tail, NonUserSource(), DefaultConsulSource(), DefaultEnterpriseSource(), DefaultVersionSource())
 	if b.boolVal(b.Flags.DevMode) {
 		b.Tail = append(b.Tail, DevConsulSource())
 	}
@@ -582,6 +582,7 @@ func (b *Builder) Build() (rt RuntimeConfig, err error) {
 		// DNS
 		DNSAddrs:              dnsAddrs,
 		DNSAllowStale:         b.boolVal(c.DNS.AllowStale),
+		DNSARecordLimit:       b.intVal(c.DNS.ARecordLimit),
 		DNSDisableCompression: b.boolVal(c.DNS.DisableCompression),
 		DNSDomain:             b.stringVal(c.DNSDomain),
 		DNSEnableTruncate:     b.boolVal(c.DNS.EnableTruncate),
@@ -810,6 +811,9 @@ func (b *Builder) Validate(rt RuntimeConfig) error {
 	if rt.DNSUDPAnswerLimit < 0 {
 		return fmt.Errorf("dns_config.udp_answer_limit cannot be %d. Must be greater than or equal to zero", rt.DNSUDPAnswerLimit)
 	}
+	if rt.DNSARecordLimit < 0 {
+		return fmt.Errorf("dns_config.a_record_limit cannot be %d. Must be greater than or equal to zero", rt.DNSARecordLimit)
+	}
 	if err := structs.ValidateMetadata(rt.NodeMeta, false); err != nil {
 		return fmt.Errorf("node_meta invalid: %v", err)
 	}
@@ -961,6 +965,8 @@ func (b *Builder) checkVal(v *CheckDefinition) *structs.CheckDefinition {
 		Interval:          b.durationVal(fmt.Sprintf("check[%s].interval", id), v.Interval),
 		DockerContainerID: b.stringVal(v.DockerContainerID),
 		Shell:             b.stringVal(v.Shell),
+		GRPC:              b.stringVal(v.GRPC),
+		GRPCUseTLS:        b.boolVal(v.GRPCUseTLS),
 		TLSSkipVerify:     b.boolVal(v.TLSSkipVerify),
 		Timeout:           b.durationVal(fmt.Sprintf("check[%s].timeout", id), v.Timeout),
 		TTL:               b.durationVal(fmt.Sprintf("check[%s].ttl", id), v.TTL),
@@ -1157,7 +1163,7 @@ func (b *Builder) expandFirstAddr(name string, s *string) net.Addr {
 	return addrs[0]
 }
 
-// expandFirstIP exapnds the go-sockaddr template in s and returns the
+// expandFirstIP expands the go-sockaddr template in s and returns the
 // first address if it is not a unix socket address. If the template
 // expands to multiple addresses an error is set and nil is returned.
 func (b *Builder) expandFirstIP(name string, s *string) *net.IPAddr {

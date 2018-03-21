@@ -131,13 +131,19 @@ will exit with an error at startup.
   either "json" or "hcl" forces Consul to interpret any file with or without
   extension to be interpreted in that format.
 
-* <a name="_data_dir"></a><a href="#_data_dir">`-data-dir`</a> - This flag provides
-  a data directory for the agent to store state.
-  This is required for all agents. The directory should be durable across reboots.
-  This is especially critical for agents that are running in server mode as they
-  must be able to persist cluster state. Additionally, the directory must support
-  the use of filesystem locking, meaning some types of mounted folders (e.g. VirtualBox
-  shared folders) may not be suitable.
+* <a name="_data_dir"></a><a href="#_data_dir">`-data-dir`</a> - This flag
+  provides a data directory for the agent to store state. This is required for
+  all agents. The directory should be durable across reboots. This is especially
+  critical for agents that are running in server mode as they must be able to
+  persist cluster state. Additionally, the directory must support the use of
+  filesystem locking, meaning some types of mounted folders (e.g. VirtualBox
+  shared folders) may not be suitable. **Note:** both server and non-server
+  agents may store ACL tokens in the state in this directory so read access may
+  grant access to any tokens on servers and to any tokens used during service
+  registration on non-servers. On Unix-based platforms the files are written
+  with 0600 permissions so you should ensure only trusted processes can execute
+  as the same user as Consul. On Windows, you should ensure the directory has
+  suitable permissions configured as these will be inherited.
 
 * <a name="_datacenter"></a><a href="#_datacenter">`-datacenter`</a> - This flag controls the datacenter in
   which the agent is running. If not provided,
@@ -398,7 +404,7 @@ will exit with an error at startup.
     ```
 
     - `provider` (required) - the name of the provider ("softlayer" in this case).
-    - `datacenter` (required) - the name of the datacenter to auto-join in.
+    - <a name="sl_datacenter"></a><a href="#sl_datacenter"><code>datacenter</code></a></a> (required) - the name of the datacenter to auto-join in.
     - `tag_value` (required) - the value of the tag to auto-join on.
     - `username` (required) - the username to use for auth.
     - `api_key` (required) - the api key to use for auth.
@@ -549,7 +555,7 @@ will exit with an error at startup.
   - Metadata keys must contain only alphanumeric, `-`, and `_` characters.
   - Metadata keys must not begin with the `consul-` prefix; that is reserved for internal use by Consul.
   - Metadata values must be between 0 and 512 (inclusive) characters in length.
-  - Metadata values for keys begining with `rfc1035-` are encoded verbatim in DNS TXT requests, otherwise
+  - Metadata values for keys beginning with `rfc1035-` are encoded verbatim in DNS TXT requests, otherwise
     the metadata kv-pair is encoded according [RFC1464](https://www.ietf.org/rfc/rfc1464.txt).
 
 * <a name="_pid_file"></a><a href="#_pid_file">`-pid-file`</a> - This flag provides the file
@@ -881,7 +887,8 @@ Consul will not enable TLS for the HTTP API unless the `https` port has been ass
   0.8 the default was changed to true, to make remote exec opt-in instead of opt-out.
 
 * <a name="disable_update_check"></a><a href="#disable_update_check">`disable_update_check`</a>
-  Disables automatic checking for security bulletins and new version releases.
+  Disables automatic checking for security bulletins and new version releases. This is disabled in 
+  Consul Enterprise.
 
 * <a name="discard_check_output"></a><a href="#discard_check_output">`discard_check_output`</a>
   Discards the output of health checks before storing them. This reduces the number of writes
@@ -942,10 +949,16 @@ Consul will not enable TLS for the HTTP API unless the `https` port has been ass
 
     * <a name="udp_answer_limit"></a><a href="#udp_answer_limit">`udp_answer_limit`</a> - Limit the number of
       resource records contained in the answer section of a UDP-based DNS
-      response. When answering a question, Consul will use the complete list of
+      response. This parameter applies only to UDP DNS queries that are less than 512 bytes. This setting is deprecated 
+      and replaced in Consul 1.0.7 by <a href="#a_record_limit">`a_record_limit`</a>.
+
+    * <a name="a_record_limit"></a><a href="#a_record_limit">`a_record_limit`</a> - Limit the number of
+      resource records contained in the answer section of a A, AAAA or ANY DNS response (both TCP and UDP).
+      When answering a question, Consul will use the complete list of
       matching hosts, shuffle the list randomly, and then limit the number of
-      answers to `udp_answer_limit` (default `3`). In environments where
-      [RFC 3484 Section 6](https://tools.ietf.org/html/rfc3484#section-6) Rule 9
+      answers to `a_record_limit` (default: no limit). This limit does not apply to SRV records.
+      
+      In environments where [RFC 3484 Section 6](https://tools.ietf.org/html/rfc3484#section-6) Rule 9
       is implemented and enforced (i.e. DNS answers are always sorted and
       therefore never random), clients may need to set this value to `1` to
       preserve the expected randomized distribution behavior (note:
@@ -1095,7 +1108,7 @@ Consul will not enable TLS for the HTTP API unless the `https` port has been ass
         performance.
 
         By default, Consul will use a lower-performance timing that's suitable
-        for [minimal Consul servers](/docs/guides/performance.html#minumum), currently equivalent
+        for [minimal Consul servers](/docs/guides/performance.html#minimum), currently equivalent
         to setting this to a value of 5 (this default may be changed in future versions of Consul,
         depending if the target minimum server profile changes). Setting this to a value of 1 will
         configure Raft to its highest-performance mode, equivalent to the default timing of Consul
@@ -1246,7 +1259,7 @@ Consul will not enable TLS for the HTTP API unless the `https` port has been ass
       The Check ID (not **check bundle**) from a previously created HTTPTRAP check. The numeric portion of the `check._cid` field in the Check API object.
 
     * <a name="telemetry-circonus_check_force_metric_activation"></a><a href="#telemetry-circonus_check_force_metric_activation">`circonus_check_force_metric_activation`</a>
-      Force activation of metrics which already exist and are not currently active. If check management is enabled, the default behavior is to add new metrics as they are encoutered. If the metric already exists in the check, it will **not** be activated. This setting overrides that behavior. By default, this is set to false.
+      Force activation of metrics which already exist and are not currently active. If check management is enabled, the default behavior is to add new metrics as they are encountered. If the metric already exists in the check, it will **not** be activated. This setting overrides that behavior. By default, this is set to false.
 
     * <a name="telemetry-circonus_check_instance_id"></a><a href="#telemetry-circonus_check_instance_id">`circonus_check_instance_id`</a>
       Uniquely identifies the metrics coming from this *instance*. It can be used to maintain metric continuity with transient or ephemeral instances as they move around within an infrastructure. By default, this is set to hostname:application name (e.g. "host123:consul").
@@ -1328,7 +1341,7 @@ Consul will not enable TLS for the HTTP API unless the `https` port has been ass
 
 * <a name="tls_cipher_suites"></a><a href="#tls_cipher_suites">`tls_cipher_suites`</a> Added in Consul
   0.8.2, this specifies the list of supported ciphersuites as a comma-separated-list. The list of all
-  available ciphersuites is available in the [Golang TLS documentation](https://golang.org/src/crypto/tls/cipher_suites.go).
+  supported ciphersuites is available in the [source code](https://github.com/hashicorp/consul/blob/master/tlsutil/config.go#L363).
 
 * <a name="tls_prefer_server_cipher_suites"></a><a href="#tls_prefer_server_cipher_suites">
   `tls_prefer_server_cipher_suites`</a> Added in Consul 0.8.2, this will cause Consul to prefer the

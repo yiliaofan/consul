@@ -1,4 +1,53 @@
-## 1.0.3 (UNRELEASED)
+## (UNRELEASED)
+
+IMPROVEMENTS:
+
+* agent: Blocking queries on service-specific health and catalog endpoints now return a per-service `X-Consul-Index` improving watch performance on very busy clusters. [[GH-3890](https://github.com/hashicorp/consul/issues/3890)]. **Note this may break blocking clients that relied on undocumented implementation details** as noted in the [upgrade docs](https://github.com/hashicorp/consul/blob/master/website/source/docs/upgrading.html.md#upgrade-from-version-106-to-higher).
+* agent: All endpoints now respond to OPTIONS requests. [[GH-3885](https://github.com/hashicorp/consul/issues/3885)]
+* dns: Introduced a new config param to limit the number of A/AAAA records returned. [[GH-3940](https://github.com/hashicorp/consul/issues/3940)]
+* agent: supported TLS cipher suites updated to include newer options, [[GH-3962](https://github.com/hashicorp/consul/pull/3962)]
+
+BUG FIXES:
+
+* agent: Fixed an issue where the coordinate update endpoint was not correctly parsing the ACL token. [[GH-3892](https://github.com/hashicorp/consul/issues/3892)]
+* server: Fixed an issue where the leader could miss clean up after a leadership transition. [[GH-3909](https://github.com/hashicorp/consul/issues/3909)]
+* agent: Fixed an issue where `consul monitor` couldn't be terminated until the first log line is delivered [[GH-3891](https://github.com/hashicorp/consul/issues/3891)]
+
+
+## 1.0.6 (February 9, 2018)
+
+BUG FIXES:
+
+* agent: Fixed a panic when using the Azure provider for retry-join. [[GH-3875](https://github.com/hashicorp/consul/issues/3875)]
+* agent: Fixed a panic when querying Consul's DNS interface over TCP. [[GH-3877](https://github.com/hashicorp/consul/issues/3877)]
+
+## 1.0.5 (February 7, 2018)
+
+NOTE ON SKIPPED RELEASE 1.0.4:
+
+We found [[GH-3867](https://github.com/hashicorp/consul/issues/3867)] after cutting the 1.0.4 release and pushing the 1.0.4 release tag, so we decided to scuttle that release and push 1.0.5 instead with a fix for that issue.
+
+SECURITY:
+
+* dns: Updated DNS vendor library to pick up bug fix in the DNS server where an open idle connection blocks the accept loop. [[GH-3859](https://github.com/hashicorp/consul/issues/3859)]
+
+FEATURES:
+
+* agent: Added support for gRPC health checks that probe the standard gRPC health endpoint. [[GH-3073](https://github.com/hashicorp/consul/issues/3073)]
+
+IMPROVEMENTS:
+
+* agent: (Consul Enterprise) The `disable_update_check` option to disable Checkpoint now defaults to `true` (this is only in the Enterprise version).
+* build: Bumped Go version to 1.9.3. [[GH-3837](https://github.com/hashicorp/consul/issues/3837)]
+
+BUG FIXES:
+
+* agent: (Consul Enterprise) Fixed an issue where the snapshot agent's HTTP client config was being ignored in favor of the HTTP command-line flags.
+* agent: Fixed an issue where health checks added to services with tags would cause extra periodic writes to the Consul servers, even if nothing had changed. This could cause extra churn on downstream applications like consul-template or Fabio. [[GH-3845](https://github.com/hashicorp/consul/issues/3845)]
+* agent: Fixed several areas where reading from catalog, health, or agent HTTP endpoints could make unintended mofidications to Consul's state in a way that would cause unnecessary anti-entropy syncs back to the Consul servers. This could cause extra churn on downstream applications like consul-template or Fabio. [[GH-3867](https://github.com/hashicorp/consul/issues/3867)]
+* agent: Fixed an issue where Serf events for failed Consul servers weren't being proactively processed by the RPC router. This would prvent Consul from proactively choosing a new server, and would instead wait for a failed RPC request before choosing a new server. This exposed clients to a failed request, when often the proactive switching would avoid that. [[GH-3864](https://github.com/hashicorp/consul/issues/3864)]
+
+## 1.0.3 (January 24, 2018)
 
 SECURITY:
 
@@ -10,11 +59,12 @@ BREAKING CHANGES:
 
 FEATURES:
 
+* agent: Added retry-join support for Azure Virtual Machine Scale Sets. [[GH-3824](https://github.com/hashicorp/consul/issues/3824)]
+
 IMPROVEMENTS:
 
 * agent: Added agent-side telemetry around Catalog APIs to provide insight on Consul's operation from the user's perspecive. [[GH-3765](https://github.com/hashicorp/consul/issues/3765)]
 * agent: Added the `NodeID` field back to the /v1/agent/self endpoint's `Config` block. [[GH-3778](https://github.com/hashicorp/consul/issues/3778)]
-* agent: Added retry-join support for Azure Virtual Machine Scale Sets. [[GH-3824](https://github.com/hashicorp/consul/issues/3824)]
 * api: Added missing `CheckID` and `Name` fields to API client's `AgentServiceCheck` structure so that IDs and names can be set when registering checks with services. [[GH-3788](https://github.com/hashicorp/consul/issues/3788)]
 
 BUG FIXES:
