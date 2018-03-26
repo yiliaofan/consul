@@ -459,11 +459,11 @@ func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Reques
 }
 
 func AgentHealthService(field string, value string, s *HTTPServer, resp http.ResponseWriter, req *http.Request) (interface{}, error) {
-    checks := s.agent.State.Checks()
+	checks := s.agent.State.Checks()
 	serviceChecks := make(api.HealthChecks, 0)
 	for _, c := range checks {
-        reflectValue := reflect.ValueOf(c)
-        propertyValue := string(reflect.Indirect(reflectValue).FieldByName(field).String())
+		reflectValue := reflect.ValueOf(c)
+		propertyValue := string(reflect.Indirect(reflectValue).FieldByName(field).String())
 		if propertyValue == value {
 			// TODO: harmonize struct.HealthCheck and api.HealthCheck (or at least extract conversion function)
 			healthCheck := &api.HealthCheck{
@@ -499,9 +499,6 @@ func AgentHealthService(field string, value string, s *HTTPServer, resp http.Res
 }
 
 func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
-	if req.Method != "GET" {
-		return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
-	}
 
 	// Pull out the service id (service id since there may be several instance of the same service on this host)
 	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/id/")
@@ -510,13 +507,10 @@ func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Re
 		fmt.Fprint(resp, "Missing service id")
 		return nil, nil
 	}
-    return AgentHealthService("ServiceID", serviceID, s, resp, req)
+	return AgentHealthService("ServiceID", serviceID, s, resp, req)
 }
 
 func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
-	if req.Method != "GET" {
-		return nil, MethodNotAllowedError{req.Method, []string{"GET"}}
-	}
 
 	// Pull out the service name
 	serviceName := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/name/")
@@ -525,7 +519,7 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 		fmt.Fprint(resp, "Missing service name")
 		return nil, nil
 	}
-    return AgentHealthService("ServiceName", serviceName, s, resp, req)
+	return AgentHealthService("ServiceName", serviceName, s, resp, req)
 }
 
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
