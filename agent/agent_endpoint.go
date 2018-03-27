@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -458,13 +457,11 @@ func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Reques
 	return nil, nil
 }
 
-func AgentHealthService(field string, value string, s *HTTPServer, resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+func AgentHealthService(serviceId string, s *HTTPServer, resp http.ResponseWriter, req *http.Request) (int, string) {
 	checks := s.agent.State.Checks()
 	serviceChecks := make(api.HealthChecks, 0)
 	for _, c := range checks {
-		reflectValue := reflect.ValueOf(c)
-		propertyValue := string(reflect.Indirect(reflectValue).FieldByName(field).String())
-		if propertyValue == value {
+		if c.ServiceID == serviceId || c.ServiceID == "" {
 			// TODO: harmonize struct.HealthCheck and api.HealthCheck (or at least extract conversion function)
 			healthCheck := &api.HealthCheck{
 				Node:        c.Node,
@@ -480,22 +477,15 @@ func AgentHealthService(field string, value string, s *HTTPServer, resp http.Res
 			serviceChecks = append(serviceChecks, healthCheck)
 		}
 	}
-	if len(serviceChecks) == 0 {
-		resp.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(resp, "Invalid %s %s", field, value)
-		return nil, nil
-	}
 	status := serviceChecks.AggregatedStatus()
 	switch status {
 	case api.HealthWarning:
-		resp.WriteHeader(http.StatusTooManyRequests)
+		return http.StatusTooManyRequests, status
 	case api.HealthPassing:
-		resp.WriteHeader(http.StatusOK)
+		return http.StatusOK, status
 	default:
-		resp.WriteHeader(http.StatusServiceUnavailable)
+		return http.StatusServiceUnavailable, status
 	}
-	fmt.Fprint(resp, status)
-	return nil, nil
 }
 
 func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
@@ -507,7 +497,18 @@ func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Re
 		fmt.Fprint(resp, "Missing service id")
 		return nil, nil
 	}
-	return AgentHealthService("ServiceID", serviceID, s, resp, req)
+	services := s.agent.State.Services()
+	for _, service := range services {
+		if service.ID == serviceID {
+			code, status := AgentHealthService(serviceID, s, resp, req)
+			resp.WriteHeader(code)
+			fmt.Fprint(resp, status)
+			return nil, nil
+		}
+	}
+	resp.WriteHeader(http.StatusNotFound)
+	fmt.Fprintf(resp, "ServiceId %s not found", serviceID)
+	return nil, nil
 }
 
 func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
@@ -519,7 +520,26 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 		fmt.Fprint(resp, "Missing service name")
 		return nil, nil
 	}
-	return AgentHealthService("ServiceName", serviceName, s, resp, req)
+	code := http.StatusNotFound
+	status := fmt.Sprintf("ServiceName %s Not Found", serviceName)
+	services := s.agent.State.Services()
+	for _, service := range services {
+		if service.Service == serviceName {
+			scode, sstatus := AgentHealthService(service.ID, s, resp, req)
+			if code == 404 {
+				code = scode
+				status = sstatus
+			}
+			if code < scode {
+				code = scode
+				status = sstatus
+			}
+
+		}
+	}
+	resp.WriteHeader(code)
+	fmt.Fprint(resp, status)
+	return nil, nil
 }
 
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {

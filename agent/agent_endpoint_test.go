@@ -281,10 +281,65 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Err: %v", err)
 		}
-		if got, want := resp.Code, 400; got != want {
+		if got, want := resp.Code, 404; got != want {
 			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
 		}
-		if got, want := resp.Body.String(), "Invalid ServiceID mysql1"; got != want {
+		if got, want := resp.Body.String(), "ServiceId mysql1 not found"; got != want {
+			t.Fatalf("got body %q want %q", got, want)
+		}
+	})
+
+	nodeCheck := &structs.HealthCheck{
+		Node:    a.Config.NodeName,
+		CheckID: "diskCheck",
+		Name:    "diskCheck",
+		Status:  api.HealthCritical,
+	}
+	err = a.State.AddCheck(nodeCheck, "")
+
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+	t.Run("critical check on node", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql", nil)
+		resp := httptest.NewRecorder()
+		_, err := a.srv.AgentHealthServiceId(resp, req)
+		if err != nil {
+			t.Fatalf("Err: %v", err)
+		}
+		if got, want := resp.Code, 503; got != want {
+			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+		}
+		if got, want := resp.Body.String(), "critical"; got != want {
+			t.Fatalf("got body %q want %q", got, want)
+		}
+	})
+
+	err = a.State.RemoveCheck(nodeCheck.CheckID)
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+	nodeCheck = &structs.HealthCheck{
+		Node:    a.Config.NodeName,
+		CheckID: "_node_maintenance",
+		Name:    "_node_maintenance",
+		Status:  api.HealthMaint,
+	}
+	err = a.State.AddCheck(nodeCheck, "")
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+	t.Run("maintenance check on node", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql", nil)
+		resp := httptest.NewRecorder()
+		_, err := a.srv.AgentHealthServiceId(resp, req)
+		if err != nil {
+			t.Fatalf("Err: %v", err)
+		}
+		if got, want := resp.Code, 503; got != want {
+			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+		}
+		if got, want := resp.Body.String(), "maintenance"; got != want {
 			t.Fatalf("got body %q want %q", got, want)
 		}
 	})
@@ -484,17 +539,17 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 			t.Fatalf("got body %q want %q", got, want)
 		}
 	})
-	t.Run("unknown serviceid", func(t *testing.T) {
+	t.Run("unknown serviceName", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/test", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceName(resp, req)
 		if err != nil {
 			t.Fatalf("Err: %v", err)
 		}
-		if got, want := resp.Code, 400; got != want {
+		if got, want := resp.Code, 404; got != want {
 			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
 		}
-		if got, want := resp.Body.String(), "Invalid ServiceName test"; got != want {
+		if got, want := resp.Body.String(), "ServiceName test Not Found"; got != want {
 			t.Fatalf("got body %q want %q", got, want)
 		}
 	})
