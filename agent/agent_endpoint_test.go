@@ -555,6 +555,36 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 	})
 	nodeCheck := &structs.HealthCheck{
 		Node:    a.Config.NodeName,
+		CheckID: "diskCheck",
+		Name:    "diskCheck",
+		Status:  api.HealthCritical,
+	}
+	err = a.State.AddCheck(nodeCheck, "")
+
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+	t.Run("critical check on node", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r", nil)
+		resp := httptest.NewRecorder()
+		_, err := a.srv.AgentHealthServiceName(resp, req)
+		if err != nil {
+			t.Fatalf("Err: %v", err)
+		}
+		if got, want := resp.Code, 503; got != want {
+			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+		}
+		if got, want := resp.Body.String(), "critical"; got != want {
+			t.Fatalf("got body %q want %q", got, want)
+		}
+	})
+
+	err = a.State.RemoveCheck(nodeCheck.CheckID)
+	if err != nil {
+		t.Fatalf("Err: %v", err)
+	}
+	nodeCheck = &structs.HealthCheck{
+		Node:    a.Config.NodeName,
 		CheckID: "_node_maintenance",
 		Name:    "_node_maintenance",
 		Status:  api.HealthMaint,
