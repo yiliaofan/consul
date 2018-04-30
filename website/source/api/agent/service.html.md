@@ -106,7 +106,7 @@ curl http://localhost:8500/v1/agent/health/service/id/web-demo001
 critical
 ```
 
-List status of web-demo002:
+List status of web-demo002 (HTTP 200):
 
 ```shell
 curl http://localhost:8500/v1/agent/health/service/id/web-demo002
