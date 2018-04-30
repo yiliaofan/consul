@@ -58,6 +58,61 @@ $ curl \
 }
 ```
 
+## Get local service health
+
+The `/v1/agent/health/service/name/<service_name>` and
+`/v1/agent/health/service/id/<service_id>` endpoints allow to retrieve an
+aggregated state of service(s) of the local agent.
+
+The endpoint `/v1/agent/health/service/name/<service_name>` query all
+services with a given names (several may match), while
+`/v1/agent/health/service/id/<service_id>` will match a single service only.
+
+Those endpoints return the aggregated values of all healthchecks for the
+service and will return the corresponding HTTP codes:
+
+| Result | Meaning                                                |
+| ------ | ------------------------------------------------------ |
+| `200`  | All healthchecks of this service are passing           |
+| `400`  | Bad parameter (missing service name of id)             |
+| `404`  | No such service id or name                             |
+| `429`  | Some healthchecks are passing, at least one is warning |
+| `503`  | All healthchecks of this service are passing           |
+
+Those endpoints might be usefull for the following use-cases:
+
+* a load-balancer want to check IP connectivity with agent and retrieve the
+  aggregated status of given service
+* create aliases for a given service (thus, the healthcheck of alias uses
+  http://localhost:8500/v1/agent/service/id/aliased_service_id healthcheck)
+
+
+### Sample Request
+
+Given 2 services with name web-demo, with web-demo001 critical and web-demo002
+passing:
+
+List worst statuses of all instances of web-demo services (HTTP 503):
+
+```shell
+curl http://localhost:8500/v1/agent/health/service/name/web-demo
+critical
+```
+
+List status of web-demo001 (HTTP 503):
+
+```shell
+curl http://localhost:8500/v1/agent/health/service/id/web-demo001
+critical
+```
+
+List status of web-demo002:
+
+```shell
+curl http://localhost:8500/v1/agent/health/service/id/web-demo002
+passing
+```
+
 ## Register Service
 
 This endpoint adds a new service, with an optional health check, to the local
