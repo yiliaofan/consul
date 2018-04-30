@@ -68,6 +68,12 @@ The endpoint `/v1/agent/health/service/name/<service_name>` query all
 services with a given names (several may match), while
 `/v1/agent/health/service/id/<service_id>` will match a single service only.
 
+If you know the ID of service you want to target, it is recommended to use
+the version `/v1/agent/health/service/id/<service_id>` so you have the result
+for the service only. When requesting
+`/v1/agent/health/service/name/<service_name>`, the caller will receive the
+worst state of all services having the given name.
+
 Those endpoints return the aggregated values of all healthchecks for the
 service and will return the corresponding HTTP codes:
 
@@ -85,7 +91,6 @@ Those endpoints might be usefull for the following use-cases:
   aggregated status of given service
 * create aliases for a given service (thus, the healthcheck of alias uses
   http://localhost:8500/v1/agent/service/id/aliased_service_id healthcheck)
-
 
 ### Sample Request
 
