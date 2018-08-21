@@ -133,6 +133,20 @@ changelogfmt:
 linux:
 	@$(SHELL) $(CURDIR)/build-support/scripts/build-local.sh -o linux -a amd64
 
+pkg/bin/windows_amd64/consul.exe:
+	mkdir -p pkg/bin/windows_amd64
+	GOOS=windows GOARCH=amd64 go build -o pkg/bin/windows_amd64/consul.exe
+
+pkg/bin/linux_amd64/consul:
+	mkdir -p pkg/bin/linux_amd64
+	GOOS=linux GOARCH=amd64 go build -o pkg/bin/linux_amd64/consul
+
+pkg/bin/darwin_amd64/consul:
+	mkdir -p pkg/bin/darwin_amd64
+	GOOS=darwin GOARCH=amd64 go build -o pkg/bin/darwin_amd64/consul
+
+multiarch: pkg/bin/windows_amd64/consul.exe pkg/bin/linux_amd64/consul pkg/bin/darwin_amd64/consul
+
 # dist builds binaries for all platforms and packages them for distribution
 dist:
 	@$(SHELL) $(CURDIR)/build-support/scripts/release.sh -t '$(DIST_TAG)' -b '$(DIST_BUILD)' -S '$(DIST_SIGN)' $(DIST_VERSION_ARG) $(DIST_DATE_ARG) $(DIST_REL_ARG)

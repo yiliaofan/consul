@@ -1,21 +1,28 @@
 language: go
 
 go:
-  - "1.x"
-
-branches:
-  only:
-    - master
-    - f-envoy
-
-matrix:
-  include:
-    - env: GOTEST_PKGS="./api"
-    - env: GOTEST_PKGS="./agent"
-    - env: GOTEST_PKGS="./agent/consul"
-    - env: GOTEST_PKGS_EXCLUDE="./api|./agent|./agent/consul"
+  - "1.10.x"
 
 script:
-  - make test-ci
+  - find . -type f -name "*go" | xargs sed 's|github.com/hashicorp/consul|github.com/criteo-forks/consul|' -i
+  - export VERSION=$(echo $TRAVIS_TAG | sed 's/^v//' )
+  - export PRERELEASE=$(echo $VERSION | cut -d '-' -f 2)
+  - sed -i "s/VersionPrerelease = \".*\"/VersionPrerelease = \"$PRERELEASE\"/" version/version.go
+  - make -j 3 multiarch
 
 sudo: false
+
+before_deploy:
+  - echo "Deploying $VERSION(-$PRERELEASE) to GitHub releases"
+  - for d in $(find ./pkg/bin -maxdepth 1 -mindepth 1 -type d | cut -d '/' -f4); do zip -j consul_${VERSION}_${d}.zip ./pkg/bin/${d}/consul* ; done
+
+deploy:
+  provider: releases
+  api_key:
+    secure: c0SoffOXSIgvL/gBfyl85bPJL2sTuXlPYzusD/RZ5t8RL76tSSK3I/T94m/7KDkQbUTjCoKv8ZrPMDz+JAqDq+8RMP4nnEcxifKOHXs6yZZK2rRHRkbHIz/VY9UmPNc6fdhj8h1f+EGZ1/tfFxKt7Ij5FdogAR2vFdpVYiRUIJqmcpez2VK4aDzSmHC9Paqly9PVC50KXBIKNSRPn5JbttxyFxJP6Trjcd8H6Mw7lwxv38En8qAfd73ODDaWB8wvB3LtD8+mPtENU/YPB68R//KFh8uvtmdk3zFK9g8wck+8eyrbfR15b90kwsQYlMJKfP+zz/twatZTkow/2k82uIrkjJJvaFqQO6E4ZnkJY9y17pPfXn7rB9sapddmSqyBAYt6sg/M9QcyoXXfTeLciGE5j+jdyPq2mRBeRSf4Z6H43qYdLjc5DakjaF0zM3GzAUed0D+2kkE2Jmmaso9v/zTEm6BUUB2Jh2/Hexa08jY1KHni46kD2EPaeBj3AP0xw9ZNeneIfT5EA2QfKjXlo6iPHlbkg+5i0ObSMtZfe57zrJjQ5K0m9TTOlZTs0ivWDptBNL17O/OhbBR2twC8ZgZUH3uh9chHeNoNhOBJfGm4zvJoWJILxbeMl+Z97vCXe5VCdoLfrZt6txPe4xpTiEcmsPX+KDVQxsPBxxmeK1o=
+  file_glob: true
+  file: consul_*.zip
+  skip_cleanup: true
+  on:
+    repo: criteo-forks/consul
+    tags: true
