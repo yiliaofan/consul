@@ -61,10 +61,10 @@ $ curl \
 ## Get local service health
 
 The `/v1/agent/health/service/name/<service_name>` and
-`/v1/agent/health/service/id/<service_id>` endpoints allow to retrieve an
+`/v1/agent/health/service/id/<service_id>` endpoints allow retrieving an
 aggregated state of service(s) of the local agent.
 
-The endpoint `/v1/agent/health/service/name/<service_name>` query all
+The endpoint `/v1/agent/health/service/name/<service_name>` queries all
 services with a given names (several may match), while
 `/v1/agent/health/service/id/<service_id>` will match a single service only.
 
@@ -83,12 +83,12 @@ service and will return the corresponding HTTP codes:
 | `400`  | Bad parameter (missing service name of id)             |
 | `404`  | No such service id or name                             |
 | `429`  | Some healthchecks are passing, at least one is warning |
-| `503`  | All healthchecks of this service are passing           |
+| `503`  | At least one of the healthchecks is critical           |
 
 Those endpoints might be usefull for the following use-cases:
 
-* a load-balancer want to check IP connectivity with agent and retrieve the
-  aggregated status of given service
+* a load-balancer wants to check IP connectivity with an agent and retrieve
+  the aggregated status of given service
 * create aliases for a given service (thus, the healthcheck of alias uses
   http://localhost:8500/v1/agent/service/id/aliased_service_id healthcheck)
 

@@ -526,15 +526,17 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 	for _, service := range services {
 		if service.Service == serviceName {
 			scode, sstatus := AgentHealthService(service.ID, s, resp, req)
-			if code == 404 {
+			// When service is not found, we ignore it and keep existing HTTP status
+			if code == http.StatusNotFound {
 				code = scode
 				status = sstatus
 			}
+			// We take the worst of all statuses, so we keep iterating
+			// passing: 200 <  < warning: 429 < critical: 503
 			if code < scode {
 				code = scode
 				status = sstatus
 			}
-
 		}
 	}
 	resp.WriteHeader(code)
