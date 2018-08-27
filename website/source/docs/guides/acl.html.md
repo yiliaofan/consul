@@ -32,7 +32,8 @@ The type is either "client" (meaning the token cannot modify ACL rules) or "mana
 
 The token ID is passed along with each RPC request to the servers. Consul's
 [HTTP endpoints](/api/index.html) can accept tokens via the `token`
-query string parameter, or the `X-Consul-Token` request header. Consul's
+query string parameter, or the `X-Consul-Token` request header, or Authorization Bearer
+token [RFC6750](https://tools.ietf.org/html/rfc6750). Consul's
 [CLI commands](/docs/commands/index.html) can accept tokens via the
 `token` argument, or the `CONSUL_HTTP_TOKEN` environment variable.
 
@@ -612,9 +613,9 @@ On success, the token ID is returned:
 ```
 
 This token ID can then be passed into Consul's HTTP APIs via the `token`
-query string parameter, or the `X-Consul-Token` request header, or Consul's
-CLI commands via the `token` argument, or the `CONSUL_HTTP_TOKEN` environment
-variable.
+query string parameter, or the `X-Consul-Token` request header, or Authorization
+Bearer token header, or Consul's CLI commands via the `token` argument,
+or the `CONSUL_HTTP_TOKEN` environment variable.
 
 #### Agent Rules
 
@@ -1061,6 +1062,11 @@ and the [`acl_down_policy`](/docs/agent/options.html#acl_down_policy)
 is set to "extend-cache", tokens will be resolved during the outage using the
 replicated set of ACLs. An [ACL replication status](/api/acl.html#acl_replication_status)
 endpoint is available to monitor the health of the replication process.
+Also note that in recent versions of Consul (greater than 1.2.0), using
+`acl_down_policy = "async-cache"` refreshes token asynchronously when an ACL is
+already cached and is expired while similar semantics than "extend-cache".
+It allows to avoid having issues when connectivity with the authoritative is not completely
+broken, but very slow.
 
 Locally-resolved ACLs will be cached using the [`acl_ttl`](/docs/agent/options.html#acl_ttl)
 setting of the non-authoritative datacenter, so these entries may persist in the

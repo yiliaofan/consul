@@ -100,9 +100,17 @@ func (s *HTTPServer) CatalogNodes(resp http.ResponseWriter, req *http.Request) (
 
 	var out structs.IndexedNodes
 	defer setMeta(resp, &out.QueryMeta)
+RETRY_ONCE:
 	if err := s.agent.RPC("Catalog.ListNodes", &args, &out); err != nil {
 		return nil, err
 	}
+	if args.QueryOptions.AllowStale && args.MaxStaleDuration > 0 && args.MaxStaleDuration < out.LastContact {
+		args.AllowStale = false
+		args.MaxStaleDuration = 0
+		goto RETRY_ONCE
+	}
+	out.ConsistencyLevel = args.QueryOptions.ConsistencyLevel()
+
 	s.agent.TranslateAddresses(args.Datacenter, out.Nodes)
 
 	// Use empty list instead of nil
@@ -127,11 +135,18 @@ func (s *HTTPServer) CatalogServices(resp http.ResponseWriter, req *http.Request
 
 	var out structs.IndexedServices
 	defer setMeta(resp, &out.QueryMeta)
+RETRY_ONCE:
 	if err := s.agent.RPC("Catalog.ListServices", &args, &out); err != nil {
 		metrics.IncrCounterWithLabels([]string{"client", "rpc", "error", "catalog_services"}, 1,
 			[]metrics.Label{{Name: "node", Value: s.nodeName()}})
 		return nil, err
 	}
+	if args.QueryOptions.AllowStale && args.MaxStaleDuration > 0 && args.MaxStaleDuration < out.LastContact {
+		args.AllowStale = false
+		args.MaxStaleDuration = 0
+		goto RETRY_ONCE
+	}
+	out.ConsistencyLevel = args.QueryOptions.ConsistencyLevel()
 
 	// Use empty map instead of nil
 	if out.Services == nil {
@@ -142,12 +157,27 @@ func (s *HTTPServer) CatalogServices(resp http.ResponseWriter, req *http.Request
 	return out.Services, nil
 }
 
+func (s *HTTPServer) CatalogConnectServiceNodes(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	return s.catalogServiceNodes(resp, req, true)
+}
+
 func (s *HTTPServer) CatalogServiceNodes(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
-	metrics.IncrCounterWithLabels([]string{"client", "api", "catalog_service_nodes"}, 1,
+	return s.catalogServiceNodes(resp, req, false)
+}
+
+func (s *HTTPServer) catalogServiceNodes(resp http.ResponseWriter, req *http.Request, connect bool) (interface{}, error) {
+	metricsKey := "catalog_service_nodes"
+	pathPrefix := "/v1/catalog/service/"
+	if connect {
+		metricsKey = "catalog_connect_service_nodes"
+		pathPrefix = "/v1/catalog/connect/"
+	}
+
+	metrics.IncrCounterWithLabels([]string{"client", "api", metricsKey}, 1,
 		[]metrics.Label{{Name: "node", Value: s.nodeName()}})
 
 	// Set default DC
-	args := structs.ServiceSpecificRequest{}
+	args := structs.ServiceSpecificRequest{Connect: connect}
 	s.parseSource(req, &args.Source)
 	args.NodeMetaFilters = s.parseMetaFilter(req)
 	if done := s.parse(resp, req, &args.Datacenter, &args.QueryOptions); done {
@@ -162,7 +192,7 @@ func (s *HTTPServer) CatalogServiceNodes(resp http.ResponseWriter, req *http.Req
 	}
 
 	// Pull out the service name
-	args.ServiceName = strings.TrimPrefix(req.URL.Path, "/v1/catalog/service/")
+	args.ServiceName = strings.TrimPrefix(req.URL.Path, pathPrefix)
 	if args.ServiceName == "" {
 		resp.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(resp, "Missing service name")
@@ -172,11 +202,18 @@ func (s *HTTPServer) CatalogServiceNodes(resp http.ResponseWriter, req *http.Req
 	// Make the RPC request
 	var out structs.IndexedServiceNodes
 	defer setMeta(resp, &out.QueryMeta)
+RETRY_ONCE:
 	if err := s.agent.RPC("Catalog.ServiceNodes", &args, &out); err != nil {
 		metrics.IncrCounterWithLabels([]string{"client", "rpc", "error", "catalog_service_nodes"}, 1,
 			[]metrics.Label{{Name: "node", Value: s.nodeName()}})
 		return nil, err
 	}
+	if args.QueryOptions.AllowStale && args.MaxStaleDuration > 0 && args.MaxStaleDuration < out.LastContact {
+		args.AllowStale = false
+		args.MaxStaleDuration = 0
+		goto RETRY_ONCE
+	}
+	out.ConsistencyLevel = args.QueryOptions.ConsistencyLevel()
 	s.agent.TranslateAddresses(args.Datacenter, out.ServiceNodes)
 
 	// Use empty list instead of nil
@@ -216,11 +253,18 @@ func (s *HTTPServer) CatalogNodeServices(resp http.ResponseWriter, req *http.Req
 	// Make the RPC request
 	var out structs.IndexedNodeServices
 	defer setMeta(resp, &out.QueryMeta)
+RETRY_ONCE:
 	if err := s.agent.RPC("Catalog.NodeServices", &args, &out); err != nil {
 		metrics.IncrCounterWithLabels([]string{"client", "rpc", "error", "catalog_node_services"}, 1,
 			[]metrics.Label{{Name: "node", Value: s.nodeName()}})
 		return nil, err
 	}
+	if args.QueryOptions.AllowStale && args.MaxStaleDuration > 0 && args.MaxStaleDuration < out.LastContact {
+		args.AllowStale = false
+		args.MaxStaleDuration = 0
+		goto RETRY_ONCE
+	}
+	out.ConsistencyLevel = args.QueryOptions.ConsistencyLevel()
 	if out.NodeServices != nil && out.NodeServices.Node != nil {
 		s.agent.TranslateAddresses(args.Datacenter, out.NodeServices.Node)
 	}
