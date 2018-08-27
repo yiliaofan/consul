@@ -523,7 +523,7 @@ func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Reques
 	return nil, nil
 }
 
-func AgentHealthService(serviceId string, s *HTTPServer, resp http.ResponseWriter, req *http.Request) (int, string) {
+func AgentHealthService(serviceId string, s *HTTPServer) (int, string) {
 	checks := s.agent.State.Checks()
 	serviceChecks := make(api.HealthChecks, 0)
 	for _, c := range checks {
@@ -575,7 +575,7 @@ func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Re
 	services := s.agent.State.Services()
 	for _, service := range services {
 		if service.ID == serviceID {
-			code, status := AgentHealthService(serviceID, s, resp, req)
+			code, status := AgentHealthService(serviceID, s)
 			if returnTextPlain(req) {
 				resp.WriteHeader(code)
 				fmt.Fprint(resp, status)
@@ -614,7 +614,7 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 	result := make(map[string][]*structs.NodeService)
 	for _, service := range services {
 		if service.Service == serviceName {
-			scode, sstatus := AgentHealthService(service.ID, s, resp, req)
+			scode, sstatus := AgentHealthService(service.ID, s)
 			res, ok := result[sstatus]
 			if !ok {
 				res = make([]*structs.NodeService, 0, 4)

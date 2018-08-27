@@ -291,61 +291,54 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 
+	eval := func(t *testing.T, url string, expectedCode int, expected string) {
+		t.Run("format=text", func(t *testing.T) {
+			req, _ := http.NewRequest("GET", url+"?format=text", nil)
+			resp := httptest.NewRecorder()
+			_, err := a.srv.AgentHealthServiceId(resp, req)
+			if err != nil {
+				t.Fatalf("Err: %v", err)
+			}
+			if got, want := resp.Code, expectedCode; got != want {
+				t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+			}
+			if got, want := resp.Body.String(), expected; got != want {
+				t.Fatalf("got body %q want %q", got, want)
+			}
+		})
+		t.Run("format=json", func(t *testing.T) {
+			req, _ := http.NewRequest("GET", url, nil)
+			resp := httptest.NewRecorder()
+			dataRaw, err := a.srv.AgentHealthServiceId(resp, req)
+			if err != nil {
+				t.Fatalf("Err: %v", err)
+			}
+			data, ok := dataRaw.(map[string]*structs.NodeService)
+			if !ok {
+				t.Fatalf("Cannot connvert result to JSON")
+			}
+			if got, want := resp.Code, expectedCode; got != want {
+				t.Fatalf("returned bad status: %d. Body: %#v", resp.Code, data)
+			}
+			if resp.Code != http.StatusNotFound {
+				if _, ok := data[expected]; !ok {
+					t.Fatalf("got body %v want %v", data, expected)
+				}
+			}
+		})
+	}
+
 	t.Run("passing checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceId(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 200; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "passing"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/id/mysql", 200, "passing")
 	})
 	t.Run("warning checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql2?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceId(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 429; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "warning"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/id/mysql2", 429, "warning")
 	})
 	t.Run("critical checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql3?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceId(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 503; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "critical"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/id/mysql3", 503, "critical")
 	})
 	t.Run("unknown serviceid", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql1?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceId(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 404; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "ServiceId mysql1 not found"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/id/mysql1", 404, "ServiceId mysql1 not found")
 	})
 
 	nodeCheck := &structs.HealthCheck{
@@ -360,18 +353,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("critical check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceId(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 503; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "critical"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/id/mysql", 503, "critical")
 	})
 
 	err = a.State.RemoveCheck(nodeCheck.CheckID)
@@ -389,18 +371,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("maintenance check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceId(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 503; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "maintenance"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/id/mysql", 503, "maintenance")
 	})
 }
 
@@ -556,61 +527,54 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 
+	eval := func(t *testing.T, url string, expectedCode int, expected string) {
+		t.Run("format=text", func(t *testing.T) {
+			req, _ := http.NewRequest("GET", url+"?format=text", nil)
+			resp := httptest.NewRecorder()
+			_, err := a.srv.AgentHealthServiceName(resp, req)
+			if err != nil {
+				t.Fatalf("Err: %v", err)
+			}
+			if got, want := resp.Code, expectedCode; got != want {
+				t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+			}
+			if got, want := resp.Body.String(), expected; got != want {
+				t.Fatalf("got body %q want %q", got, want)
+			}
+		})
+		t.Run("format=json", func(t *testing.T) {
+			req, _ := http.NewRequest("GET", url, nil)
+			resp := httptest.NewRecorder()
+			dataRaw, err := a.srv.AgentHealthServiceName(resp, req)
+			if err != nil {
+				t.Fatalf("Err: %v", err)
+			}
+			data, ok := dataRaw.(map[string][]*structs.NodeService)
+			if !ok {
+				t.Fatalf("Cannot connvert result to JSON")
+			}
+			if got, want := resp.Code, expectedCode; got != want {
+				t.Fatalf("returned bad status: %d. Body: %#v", resp.Code, data)
+			}
+			if resp.Code != http.StatusNotFound {
+				if _, ok := data[expected]; !ok {
+					t.Fatalf("got body %v want %v", data, expected)
+				}
+			}
+		})
+	}
+
 	t.Run("passing checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/httpd?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceName(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 200; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "passing"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/name/httpd", 200, "passing")
 	})
 	t.Run("warning checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-rw?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceName(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 429; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "warning"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/name/mysql-pool-rw", 429, "warning")
 	})
 	t.Run("critical checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceName(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 503; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "critical"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/name/mysql-pool-r", 503, "critical")
 	})
 	t.Run("unknown serviceName", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/test?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceName(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 404; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "ServiceName test Not Found"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/name/test", 404, "ServiceName test Not Found")
 	})
 	nodeCheck := &structs.HealthCheck{
 		Node:    a.Config.NodeName,
@@ -624,18 +588,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("critical check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceName(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 503; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "critical"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/name/mysql-pool-r", 503, "critical")
 	})
 
 	err = a.State.RemoveCheck(nodeCheck.CheckID)
@@ -653,18 +606,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("maintenance check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r?format=text", nil)
-		resp := httptest.NewRecorder()
-		_, err := a.srv.AgentHealthServiceName(resp, req)
-		if err != nil {
-			t.Fatalf("Err: %v", err)
-		}
-		if got, want := resp.Code, 503; got != want {
-			t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
-		}
-		if got, want := resp.Body.String(), "maintenance"; got != want {
-			t.Fatalf("got body %q want %q", got, want)
-		}
+		eval(t, "/v1/agent/health/service/name/mysql-pool-r", 503, "maintenance")
 	})
 }
 
