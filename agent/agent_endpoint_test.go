@@ -195,6 +195,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 	t.Parallel()
 	a := NewTestAgent(t.Name(), "")
 	defer a.Shutdown()
+	testrpc.WaitForTestAgent(t, a.RPC, "dc1")
 
 	service := &structs.NodeService{
 		ID:      "mysql",
@@ -291,7 +292,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 	}
 
 	t.Run("passing checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
@@ -305,7 +306,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		}
 	})
 	t.Run("warning checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql2", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql2?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
@@ -319,7 +320,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		}
 	})
 	t.Run("critical checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql3", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql3?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
@@ -333,7 +334,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		}
 	})
 	t.Run("unknown serviceid", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql1", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql1?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
@@ -359,7 +360,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("critical check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
@@ -388,7 +389,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("maintenance check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/id/mysql?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceId(resp, req)
 		if err != nil {
@@ -556,7 +557,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 	}
 
 	t.Run("passing checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/httpd", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/httpd?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceName(resp, req)
 		if err != nil {
@@ -570,7 +571,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		}
 	})
 	t.Run("warning checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-rw", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-rw?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceName(resp, req)
 		if err != nil {
@@ -584,7 +585,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		}
 	})
 	t.Run("critical checks", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceName(resp, req)
 		if err != nil {
@@ -598,7 +599,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		}
 	})
 	t.Run("unknown serviceName", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/test", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/test?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceName(resp, req)
 		if err != nil {
@@ -623,7 +624,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("critical check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceName(resp, req)
 		if err != nil {
@@ -652,7 +653,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("maintenance check on node", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r", nil)
+		req, _ := http.NewRequest("GET", "/v1/agent/health/service/name/mysql-pool-r?format=text", nil)
 		resp := httptest.NewRecorder()
 		_, err := a.srv.AgentHealthServiceName(resp, req)
 		if err != nil {
