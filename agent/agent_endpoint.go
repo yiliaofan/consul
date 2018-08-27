@@ -488,8 +488,17 @@ func AgentHealthService(serviceId string, s *HTTPServer, resp http.ResponseWrite
 	}
 }
 
-func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+func returnTextPlain(req *http.Request) bool {
+	if contentType := req.Header.Get("Accept"); strings.HasPrefix(contentType, "text/plain") {
+		return true
+	}
+	if format := req.URL.Query().Get("format"); format == "text" {
+		return true
+	}
+	return false
+}
 
+func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	// Pull out the service id (service id since there may be several instance of the same service on this host)
 	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/id/")
 	if serviceID == "" {
@@ -501,14 +510,27 @@ func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Re
 	for _, service := range services {
 		if service.ID == serviceID {
 			code, status := AgentHealthService(serviceID, s, resp, req)
+			if returnTextPlain(req) {
+				resp.WriteHeader(code)
+				fmt.Fprint(resp, status)
+				return nil, nil
+			}
+			resp.Header().Add("Content-Type", "application/json")
 			resp.WriteHeader(code)
-			fmt.Fprint(resp, status)
-			return nil, nil
+			result := make(map[string]*structs.NodeService)
+			result[status] = service
+			return result, nil
 		}
 	}
+	if returnTextPlain(req) {
+		resp.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(resp, "ServiceId %s not found", serviceID)
+		return nil, nil
+	}
+	resp.Header().Add("Content-Type", "application/json")
 	resp.WriteHeader(http.StatusNotFound)
-	fmt.Fprintf(resp, "ServiceId %s not found", serviceID)
-	return nil, nil
+	result := make(map[string]*structs.NodeService)
+	return result, nil
 }
 
 func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
@@ -523,9 +545,15 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 	code := http.StatusNotFound
 	status := fmt.Sprintf("ServiceName %s Not Found", serviceName)
 	services := s.agent.State.Services()
+	result := make(map[string][]*structs.NodeService)
 	for _, service := range services {
 		if service.Service == serviceName {
 			scode, sstatus := AgentHealthService(service.ID, s, resp, req)
+			res, ok := result[sstatus]
+			if !ok {
+				res = make([]*structs.NodeService, 0, 4)
+			}
+			result[sstatus] = append(res, service)
 			// When service is not found, we ignore it and keep existing HTTP status
 			if code == http.StatusNotFound {
 				code = scode
@@ -539,9 +567,14 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 			}
 		}
 	}
+	if returnTextPlain(req) {
+		resp.WriteHeader(code)
+		fmt.Fprint(resp, status)
+		return nil, nil
+	}
+	resp.Header().Add("Content-Type", "application/json")
 	resp.WriteHeader(code)
-	fmt.Fprint(resp, status)
-	return nil, nil
+	return result, nil
 }
 
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
