@@ -77,6 +77,11 @@ for the service only. When requesting
 `/v1/agent/health/service/name/<service_name>`, the caller will receive the
 worst state of all services having the given name.
 
+Those endpoints support JSON format and text/plain formats, JSON being the
+default. In order to get the text format, you can append `?format=text` to
+the URL or use Mime Content negotiation by specifying a HTTP Header
+`Accept` starting with `text/plain`.
+
 Those endpoints return the aggregated values of all healthchecks for the
 service and will return the corresponding HTTP codes:
 
@@ -95,30 +100,150 @@ Those endpoints might be usefull for the following use-cases:
 * create aliases for a given service (thus, the healthcheck of alias uses
   http://localhost:8500/v1/agent/service/id/aliased_service_id healthcheck)
 
-### Sample Request
+### Sample Requests
 
-Given 2 services with name web-demo, with web-demo001 critical and web-demo002
-passing:
+Given 2 services with name `web`, with web2 critical and web1 passing:
 
-List worst statuses of all instances of web-demo services (HTTP 503):
+#### List worst statuses of all instances of web-demo services (HTTP 503)
+
+##### By Name, Text
 
 ```shell
-curl http://localhost:8500/v1/agent/health/service/name/web-demo
+curl http://localhost:8500/v1/agent/health/service/name/web?format=text
 critical
 ```
 
-List status of web-demo001 (HTTP 503):
+##### By Name, JSON
+
+In JSON, the detail of passing/warning/critical services is present in output,
+in a array.
 
 ```shell
-curl http://localhost:8500/v1/agent/health/service/id/web-demo001
+curl localhost:8500/v1/agent/health/service/name/web
+```
+
+```json
+{
+    "critical": [
+        {
+            "ID": "web2",
+            "Service": "web",
+            "Tags": [
+                "rails"
+            ],
+            "Address": "",
+            "Meta": null,
+            "Port": 80,
+            "EnableTagOverride": false,
+            "ProxyDestination": "",
+            "Connect": {
+                "Native": false,
+                "Proxy": null
+            },
+            "CreateIndex": 0,
+            "ModifyIndex": 0
+        }
+    ],
+    "passing": [
+        {
+            "ID": "web1",
+            "Service": "web",
+            "Tags": [
+                "rails"
+            ],
+            "Address": "",
+            "Meta": null,
+            "Port": 80,
+            "EnableTagOverride": false,
+            "ProxyDestination": "",
+            "Connect": {
+                "Native": false,
+                "Proxy": null
+            },
+            "CreateIndex": 0,
+            "ModifyIndex": 0
+        }
+    ]
+}
+```
+
+#### List status of web2 (HTTP 503)
+
+##### Failure By ID, Text
+
+```shell
+curl http://localhost:8500/v1/agent/health/service/id/web2?format=text
 critical
 ```
 
-List status of web-demo002 (HTTP 200):
+##### Failure By ID, JSON
+
+In JSON, the output per ID is not an array, but only contains the value
+of service.
 
 ```shell
-curl http://localhost:8500/v1/agent/health/service/id/web-demo002
+curl localhost:8500/v1/agent/health/service/id/web2
+```
+
+```json
+{
+    "critical": {
+        "ID": "web2",
+        "Service": "web",
+        "Tags": [
+            "rails"
+        ],
+        "Address": "",
+        "Meta": null,
+        "Port": 80,
+        "EnableTagOverride": false,
+        "ProxyDestination": "",
+        "Connect": {
+            "Native": false,
+            "Proxy": null
+        },
+        "CreateIndex": 0,
+        "ModifyIndex": 0
+    }
+}
+```
+
+#### List status of web2 (HTTP 200)
+
+##### Success By ID, Text
+
+```shell
+curl localhost:8500/v1/agent/health/service/id/web1?format=text
 passing
+```
+
+#### Success By ID, JSON
+
+```shell
+curl localhost:8500/v1/agent/health/service/id/web1
+```
+
+```json
+{
+    "passing": {
+        "ID": "web1",
+        "Service": "web",
+        "Tags": [
+            "rails"
+        ],
+        "Address": "",
+        "Meta": null,
+        "Port": 80,
+        "EnableTagOverride": false,
+        "ProxyDestination": "",
+        "Connect": {
+            "Native": false,
+            "Proxy": null
+        },
+        "CreateIndex": 0,
+        "ModifyIndex": 0
+    }
+}
 ```
 
 ## Register Service
