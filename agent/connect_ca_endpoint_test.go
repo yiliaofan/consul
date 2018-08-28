@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/consul/testrpc"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/hashicorp/consul/agent/connect"
@@ -63,6 +65,7 @@ func TestConnectCAConfig(t *testing.T) {
 	assert := assert.New(t)
 	a := NewTestAgent(t.Name(), "")
 	defer a.Shutdown()
+	testrpc.WaitForTestAgent(t, a.RPC, "dc1")
 
 	expected := &structs.ConsulCAProviderConfig{
 		RotationPeriod: 90 * 24 * time.Hour,
