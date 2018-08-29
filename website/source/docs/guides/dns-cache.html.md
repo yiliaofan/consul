@@ -85,7 +85,12 @@ To enable caching of node lookups (e.g. "foo.node.consul"), we can set the
 Service TTLs can be specified in a more granular fashion. You can set TTLs
 per-service, with a wildcard TTL as the default. This is specified using the
 [`dns_config.service_ttl`](/docs/agent/options.html#service_ttl) map. The "*"
-service is the wildcard service.
+is supported at the end of any prefix and a less precedence than strict match,
+so 'my-service-x' has precedence over 'my-service-*', when performing wildcard
+match, the longuest path is taken into account, thus 'my-service-*' TTL will
+be used instead of 'my-*' or '*'. With the same rule, '*' is the default value
+when nothing else matches. If no '*', then the TTL is set to value 0 if no match
+has been found.
 
 For example, a [`dns_config`](/docs/agent/options.html#dns_config) that provides
 a wildcard TTL and a specific TTL for a service might look like this:
@@ -95,7 +100,9 @@ a wildcard TTL and a specific TTL for a service might look like this:
   "dns_config": {
     "service_ttl": {
       "*": "5s",
-      "web": "30s"
+      "web": "30s",
+      "db*": "10s",
+      "db-master": "3s"
     }
   }
 }
@@ -104,6 +111,9 @@ a wildcard TTL and a specific TTL for a service might look like this:
 This sets all lookups to "web.service.consul" to use a 30 second TTL
 while lookups to "db.service.consul" or "api.service.consul" will use the
 5 second TTL from the wildcard.
+
+All lookups matching "db*" would get a 10 seconds TTL except "db-master"
+that would have a 3 seconds TTL.
 
 [Prepared Queries](/api/query.html) provide an additional
 level of control over TTL. They allow for the TTL to be defined along with
