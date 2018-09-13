@@ -550,6 +550,15 @@ func (b *Builder) Build() (rt RuntimeConfig, err error) {
 		})
 	}
 
+	primaryDatacenter := strings.ToLower(b.stringVal(c.PrimaryDatacenter))
+	if c.ACLDatacenter != nil {
+		b.warn("The 'acl_datacenter' field is deprecated. Use the 'primary_datacenter' field instead.")
+
+		if primaryDatacenter == "" {
+			primaryDatacenter = strings.ToLower(b.stringVal(c.ACLDatacenter))
+		}
+	}
+
 	proxyDefaultExecMode := b.stringVal(c.Connect.ProxyDefaults.ExecMode)
 	proxyDefaultDaemonCommand := c.Connect.ProxyDefaults.DaemonCommand
 	proxyDefaultScriptCommand := c.Connect.ProxyDefaults.ScriptCommand
@@ -725,6 +734,7 @@ func (b *Builder) Build() (rt RuntimeConfig, err error) {
 		NodeName:                                b.nodeName(c.NodeName),
 		NonVotingServer:                         b.boolVal(c.NonVotingServer),
 		PidFile:                                 b.stringVal(c.PidFile),
+		PrimaryDatacenter:                       primaryDatacenter,
 		RPCAdvertiseAddr:                        rpcAdvertiseAddr,
 		RPCBindAddr:                             rpcBindAddr,
 		RPCHoldTimeout:                          b.durationVal("performance.rpc_hold_timeout", c.Performance.RPCHoldTimeout),
@@ -949,7 +959,7 @@ func (b *Builder) Validate(rt RuntimeConfig) error {
 
 	// Validate the given Connect CA provider config
 	validCAProviders := map[string]bool{
-		"": true,
+		"":                       true,
 		structs.ConsulCAProvider: true,
 		structs.VaultCAProvider:  true,
 	}
@@ -1042,27 +1052,27 @@ func (b *Builder) checkVal(v *CheckDefinition) *structs.CheckDefinition {
 	id := types.CheckID(b.stringVal(v.ID))
 
 	return &structs.CheckDefinition{
-		ID:                id,
-		Name:              b.stringVal(v.Name),
-		Notes:             b.stringVal(v.Notes),
-		ServiceID:         b.stringVal(v.ServiceID),
-		Token:             b.stringVal(v.Token),
-		Status:            b.stringVal(v.Status),
-		ScriptArgs:        v.ScriptArgs,
-		HTTP:              b.stringVal(v.HTTP),
-		Header:            v.Header,
-		Method:            b.stringVal(v.Method),
-		TCP:               b.stringVal(v.TCP),
-		Interval:          b.durationVal(fmt.Sprintf("check[%s].interval", id), v.Interval),
-		DockerContainerID: b.stringVal(v.DockerContainerID),
-		Shell:             b.stringVal(v.Shell),
-		GRPC:              b.stringVal(v.GRPC),
-		GRPCUseTLS:        b.boolVal(v.GRPCUseTLS),
-		TLSSkipVerify:     b.boolVal(v.TLSSkipVerify),
-		AliasNode:         b.stringVal(v.AliasNode),
-		AliasService:      b.stringVal(v.AliasService),
-		Timeout:           b.durationVal(fmt.Sprintf("check[%s].timeout", id), v.Timeout),
-		TTL:               b.durationVal(fmt.Sprintf("check[%s].ttl", id), v.TTL),
+		ID:                             id,
+		Name:                           b.stringVal(v.Name),
+		Notes:                          b.stringVal(v.Notes),
+		ServiceID:                      b.stringVal(v.ServiceID),
+		Token:                          b.stringVal(v.Token),
+		Status:                         b.stringVal(v.Status),
+		ScriptArgs:                     v.ScriptArgs,
+		HTTP:                           b.stringVal(v.HTTP),
+		Header:                         v.Header,
+		Method:                         b.stringVal(v.Method),
+		TCP:                            b.stringVal(v.TCP),
+		Interval:                       b.durationVal(fmt.Sprintf("check[%s].interval", id), v.Interval),
+		DockerContainerID:              b.stringVal(v.DockerContainerID),
+		Shell:                          b.stringVal(v.Shell),
+		GRPC:                           b.stringVal(v.GRPC),
+		GRPCUseTLS:                     b.boolVal(v.GRPCUseTLS),
+		TLSSkipVerify:                  b.boolVal(v.TLSSkipVerify),
+		AliasNode:                      b.stringVal(v.AliasNode),
+		AliasService:                   b.stringVal(v.AliasService),
+		Timeout:                        b.durationVal(fmt.Sprintf("check[%s].timeout", id), v.Timeout),
+		TTL:                            b.durationVal(fmt.Sprintf("check[%s].ttl", id), v.TTL),
 		DeregisterCriticalServiceAfter: b.durationVal(fmt.Sprintf("check[%s].deregister_critical_service_after", id), v.DeregisterCriticalServiceAfter),
 	}
 }
