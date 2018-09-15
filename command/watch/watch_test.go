@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/consul/testrpc"
+
 	"github.com/hashicorp/consul/agent"
 	"github.com/hashicorp/consul/testrpc"
 	"github.com/mitchellh/cli"
@@ -40,6 +42,7 @@ func TestWatchCommandNoConnect(t *testing.T) {
 	t.Parallel()
 	a := agent.NewTestAgent(t.Name(), ``)
 	defer a.Shutdown()
+	testrpc.WaitForTestAgent(t, a.RPC, "dc1")
 
 	ui := cli.NewMockUi()
 	c := New(ui, nil)
