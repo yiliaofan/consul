@@ -531,6 +531,126 @@ func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Reques
 	return nil, nil
 }
 
+func AgentHealthService(serviceId string, s *HTTPServer) (int, string) {
+	checks := s.agent.State.Checks()
+	serviceChecks := make(api.HealthChecks, 0)
+	for _, c := range checks {
+		if c.ServiceID == serviceId || c.ServiceID == "" {
+			// TODO: harmonize struct.HealthCheck and api.HealthCheck (or at least extract conversion function)
+			healthCheck := &api.HealthCheck{
+				Node:        c.Node,
+				CheckID:     string(c.CheckID),
+				Name:        c.Name,
+				Status:      c.Status,
+				Notes:       c.Notes,
+				Output:      c.Output,
+				ServiceID:   c.ServiceID,
+				ServiceName: c.ServiceName,
+				ServiceTags: c.ServiceTags,
+			}
+			serviceChecks = append(serviceChecks, healthCheck)
+		}
+	}
+	status := serviceChecks.AggregatedStatus()
+	switch status {
+	case api.HealthWarning:
+		return http.StatusTooManyRequests, status
+	case api.HealthPassing:
+		return http.StatusOK, status
+	default:
+		return http.StatusServiceUnavailable, status
+	}
+}
+
+func returnTextPlain(req *http.Request) bool {
+	if contentType := req.Header.Get("Accept"); strings.HasPrefix(contentType, "text/plain") {
+		return true
+	}
+	if format := req.URL.Query().Get("format"); format == "text" {
+		return true
+	}
+	return false
+}
+
+func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	// Pull out the service id (service id since there may be several instance of the same service on this host)
+	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/id/")
+	if serviceID == "" {
+		resp.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(resp, "Missing service id")
+		return nil, nil
+	}
+	services := s.agent.State.Services()
+	for _, service := range services {
+		if service.ID == serviceID {
+			code, status := AgentHealthService(serviceID, s)
+			if returnTextPlain(req) {
+				resp.WriteHeader(code)
+				fmt.Fprint(resp, status)
+				return nil, nil
+			}
+			resp.Header().Add("Content-Type", "application/json")
+			resp.WriteHeader(code)
+			result := make(map[string]*structs.NodeService)
+			result[status] = service
+			return result, nil
+		}
+	}
+	if returnTextPlain(req) {
+		resp.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(resp, "ServiceId %s not found", serviceID)
+		return nil, nil
+	}
+	resp.Header().Add("Content-Type", "application/json")
+	resp.WriteHeader(http.StatusNotFound)
+	result := make(map[string]*structs.NodeService)
+	return result, nil
+}
+
+func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+
+	// Pull out the service name
+	serviceName := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/name/")
+	if serviceName == "" {
+		resp.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(resp, "Missing service name")
+		return nil, nil
+	}
+	code := http.StatusNotFound
+	status := fmt.Sprintf("ServiceName %s Not Found", serviceName)
+	services := s.agent.State.Services()
+	result := make(map[string][]*structs.NodeService)
+	for _, service := range services {
+		if service.Service == serviceName {
+			scode, sstatus := AgentHealthService(service.ID, s)
+			res, ok := result[sstatus]
+			if !ok {
+				res = make([]*structs.NodeService, 0, 4)
+			}
+			result[sstatus] = append(res, service)
+			// When service is not found, we ignore it and keep existing HTTP status
+			if code == http.StatusNotFound {
+				code = scode
+				status = sstatus
+			}
+			// We take the worst of all statuses, so we keep iterating
+			// passing: 200 <  < warning: 429 < critical: 503
+			if code < scode {
+				code = scode
+				status = sstatus
+			}
+		}
+	}
+	if returnTextPlain(req) {
+		resp.WriteHeader(code)
+		fmt.Fprint(resp, status)
+		return nil, nil
+	}
+	resp.Header().Add("Content-Type", "application/json")
+	resp.WriteHeader(code)
+	return result, nil
+}
+
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	var args structs.ServiceDefinition
 	// Fixup the type decode of TTL or Interval if a check if provided.

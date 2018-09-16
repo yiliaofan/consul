@@ -189,7 +189,7 @@ test-internal:
 	@awk '/^[^[:space:]]/ {do_print=0} /--- SKIP/ {do_print=1} do_print==1 {print}' test.log
 	@awk '/^[^[:space:]]/ {do_print=0} /--- FAIL/ {do_print=1} do_print==1 {print}' test.log
 	@grep '^FAIL' test.log || true
-	@if [ "$$(cat exit-code)" == "0" ] ; then echo "PASS" ; exit 0 ; else exit 1 ; fi
+	@if [ "$$(cat exit-code)" == "0" ] ; then echo "PASS" ; exit 0 ; else echo FAILED; tail -n50 test.log; exit 1 ; fi
 
 test-race:
 	$(MAKE) GOTEST_FLAGS=-race
