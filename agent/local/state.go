@@ -51,10 +51,16 @@ type ServiceState struct {
 	// Deleted is true when the service record has been marked as deleted
 	// but has not been removed on the server yet.
 	Deleted bool
+
+	// WatchCh is closed when the service state changes suitable for use in a
+	// memdb.WatchSet when watching agent local changes with hash-based blocking.
+	WatchCh chan struct{}
 }
 
-// Clone returns a shallow copy of the object. The service record still
-// points to the original service record and must not be modified.
+// Clone returns a shallow copy of the object. The service record still points
+// to the original service record and must not be modified. The WatchCh is also
+// still pointing to the original so the clone will be update when the original
+// is.
 func (s *ServiceState) Clone() *ServiceState {
 	s2 := new(ServiceState)
 	*s2 = *s
@@ -279,6 +285,10 @@ func (l *State) RemoveService(id string) error {
 	// entry around until it is actually removed.
 	s.InSync = false
 	s.Deleted = true
+	if s.WatchCh != nil {
+		close(s.WatchCh)
+		s.WatchCh = nil
+	}
 	l.TriggerSyncChanges()
 
 	return nil
@@ -313,9 +323,10 @@ func (l *State) Services() map[string]*structs.NodeService {
 	return m
 }
 
-// ServiceState returns a shallow copy of the current service state
-// record. The service record still points to the original service
-// record and must not be modified.
+// ServiceState returns a shallow copy of the current service state record. The
+// service record still points to the original service record and must not be
+// modified. The WatchCh for the copy returned will also be closed when the
+// actual service state is changed.
 func (l *State) ServiceState(id string) *ServiceState {
 	l.RLock()
 	defer l.RUnlock()
@@ -334,7 +345,15 @@ func (l *State) SetServiceState(s *ServiceState) {
 	l.Lock()
 	defer l.Unlock()
 
+	s.WatchCh = make(chan struct{})
+
+	old, hasOld := l.services[s.Service.ID]
 	l.services[s.Service.ID] = s
+
+	if hasOld && old.WatchCh != nil {
+		close(old.WatchCh)
+	}
+
 	l.TriggerSyncChanges()
 }
 
