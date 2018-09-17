@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/hashicorp/consul/agent/structs"
@@ -88,20 +87,29 @@ func (a *Agent) sidecarServiceFromNodeService(ns *structs.NodeService, token str
 	// Allocate port if needed (min and max inclusive).
 	rangeLen := a.config.ConnectSidecarMaxPort - a.config.ConnectSidecarMinPort + 1
 	if sidecar.Port < 1 && a.config.ConnectSidecarMinPort > 0 && rangeLen > 0 {
-		// This should be a really short list so don't bother optimising lookup yet.
-	OUTER:
-		for _, offset := range rand.Perm(rangeLen) {
-			p := a.config.ConnectSidecarMinPort + offset
-			// See if this port was already allocated to another service
-			for _, otherNS := range a.State.Services() {
-				if otherNS.Port == p {
-					// already taken, skip to next random pick in the range
-					continue OUTER
-				}
+		// This did pick at random which was simpler but consul reload would assign
+		// new ports to all the sidecar since it unloads all state and re-populates.
+		// It also made this more difficult to test (have to pin the range to one
+		// etc.). Instead we assign sequentially, but rather than N^2 lookups, just
+		// iterated services once and find the set of used ports in allocation
+		// range. We could maintain this state permenantly in agent but it doesn't
+		// seem to be necessary - even with thousands of services this is not
+		// expensive to compute.
+		usedPorts := make(map[int]struct{})
+		for _, otherNS := range a.State.Services() {
+			if a.config.ConnectSidecarMinPort <= otherNS.Port &&
+				otherNS.Port <= a.config.ConnectSidecarMaxPort {
+				usedPorts[otherNS.Port] = struct{}{}
 			}
-			// We made it through all existing proxies without a match so claim this one
-			sidecar.Port = p
-			break
+		}
+
+		// Iterate until we find lowest unused port
+		for p := a.config.ConnectSidecarMinPort; p <= a.config.ConnectSidecarMaxPort; p++ {
+			_, used := usedPorts[p]
+			if !used {
+				sidecar.Port = p
+				break
+			}
 		}
 	}
 	// If no ports left (or auto ports disabled) fail

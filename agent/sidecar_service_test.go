@@ -203,8 +203,9 @@ func TestAgent_sidecarServiceFromNodeService(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set port range to make it deterministic. This allows a single assigned
-			// port at 2222 thanks to being inclusive at both ends.
+			// Set port range to be tiny (one availabl) to test consuming all of it.
+			// This allows a single assigned port at 2222 thanks to being inclusive at
+			// both ends.
 			hcl := `
 			ports {
 				sidecar_min_port = 2222
