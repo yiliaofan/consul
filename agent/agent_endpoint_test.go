@@ -1940,38 +1940,49 @@ func TestAgent_RegisterService_TranslateKeys(t *testing.T) {
 					},
 				},
 			},
-			SidecarService: &structs.ServiceDefinition{
-				Name: "test-proxy",
-				Meta: map[string]string{
-					"some":                "meta",
-					"enable_tag_override": "sidecar_service.meta is 'opaque' so should not get translated",
-				}, Port: 8001,
-				EnableTagOverride: true,
-				Kind:              structs.ServiceKindConnectProxy,
-				Proxy: &structs.ConnectProxyConfig{
-					DestinationServiceName: "test",
-					DestinationServiceID:   "test",
-					LocalServiceAddress:    "127.0.0.1",
-					LocalServicePort:       4321,
-					Upstreams: structs.Upstreams{
-						{
-							DestinationType:      structs.UpstreamDestTypeService,
-							DestinationName:      "db",
-							DestinationNamespace: "default",
-							LocalBindAddress:     "127.0.0.1",
-							LocalBindPort:        1234,
-							Config: map[string]interface{}{
-								"destination_type": "sidecar_service.proxy.upstreams.config is 'opaque' so should not get translated",
-							},
-						},
+			// The sidecar service is nilled since it is only config sugar and
+			// shouldn't be represented in state. We assert that the translations
+			// there worked by inspecting the registered sidecar below.
+			SidecarService: nil,
+		},
+	}
+
+	got := a.State.Service("test")
+	require.Equal(t, svc, got)
+
+	sidecarSvc := &structs.NodeService{
+		Kind:    structs.ServiceKindConnectProxy,
+		ID:      "test-sidecar-proxy",
+		Service: "test-proxy",
+		Meta: map[string]string{
+			"some":                "meta",
+			"enable_tag_override": "sidecar_service.meta is 'opaque' so should not get translated",
+		},
+		Port:                       8001,
+		EnableTagOverride:          true,
+		LocallyRegisteredAsSidecar: true,
+		Proxy: structs.ConnectProxyConfig{
+			DestinationServiceName: "test",
+			DestinationServiceID:   "test",
+			LocalServiceAddress:    "127.0.0.1",
+			LocalServicePort:       4321,
+			Upstreams: structs.Upstreams{
+				{
+					DestinationType:      structs.UpstreamDestTypeService,
+					DestinationName:      "db",
+					DestinationNamespace: "default",
+					LocalBindAddress:     "127.0.0.1",
+					LocalBindPort:        1234,
+					Config: map[string]interface{}{
+						"destination_type": "sidecar_service.proxy.upstreams.config is 'opaque' so should not get translated",
 					},
 				},
 			},
 		},
 	}
 
-	got := a.State.Service("test")
-	require.Equal(t, svc, got)
+	gotSidecar := a.State.Service("test-sidecar-proxy")
+	require.Equal(t, sidecarSvc, gotSidecar)
 }
 
 func TestAgent_RegisterService_ACLDeny(t *testing.T) {
