@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -229,6 +231,68 @@ func (s *HTTPServer) AgentServices(resp http.ResponseWriter, req *http.Request) 
 func (s *HTTPServer) AgentService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	// Get the proxy ID. Note that this is the ID of a proxy's service instance.
 	id := strings.TrimPrefix(req.URL.Path, "/v1/agent/service/")
+
+	// DEPRECATED(managed-proxies) - remove this whole hack.
+	//
+	// Support managed proxies until they are removed entirely. Since built-in
+	// proxy will now use this endpoint, in order to not break managed proxies in
+	// the interim until they are removed, we need to mirror the default-setting
+	// behaviour they had. Rather than thread that through this whole method as
+	// special cases that need to be unwound later (and duplicate logic in the
+	// proxy config endpoint) just defer to that and then translater the response.
+	if managedProxy := s.agent.State.Proxy(id); managedProxy != nil {
+		// This is for a managed proxy, use the old endpoint's behaviour
+		req.URL.Path = "/v1/agent/connect/proxy/" + id
+		obj, err := s.AgentConnectProxyConfig(resp, req)
+		if err != nil {
+			return obj, err
+		}
+		proxyCfg, ok := obj.(*api.ConnectProxyConfig)
+		if !ok {
+			return nil, errors.New("internal error")
+		}
+		// These are all set by defaults so type checks are just sanity checks that
+		// should never fail.
+		port, ok := proxyCfg.Config["bind_port"].(int)
+		if !ok || port < 1 {
+			return nil, errors.New("invalid proxy config")
+		}
+		addr, ok := proxyCfg.Config["bind_address"].(string)
+		if !ok || addr == "" {
+			return nil, errors.New("invalid proxy config")
+		}
+		localAddr, ok := proxyCfg.Config["local_service_address"].(string)
+		if !ok || localAddr == "" {
+			return nil, errors.New("invalid proxy config")
+		}
+		// Old local_service_address was a host:port
+		localAddress, localPortRaw, err := net.SplitHostPort(localAddr)
+		if err != nil {
+			return nil, err
+		}
+		localPort, err := strconv.Atoi(localPortRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		reply := &api.AgentService{
+			Kind:        api.ServiceKindConnectProxy,
+			ID:          proxyCfg.ProxyServiceID,
+			Service:     managedProxy.Proxy.ProxyService.Service,
+			Port:        port,
+			Address:     addr,
+			ContentHash: proxyCfg.ContentHash,
+			Proxy: &api.AgentServiceConnectProxyConfig{
+				DestinationServiceName: proxyCfg.TargetServiceName,
+				DestinationServiceID:   proxyCfg.TargetServiceID,
+				LocalServiceAddress:    localAddress,
+				LocalServicePort:       localPort,
+				Config:                 proxyCfg.Config,
+				Upstreams:              proxyCfg.Upstreams,
+			},
+		}
+		return reply, nil
+	}
 
 	// Maybe block
 	var queryOpts structs.QueryOptions

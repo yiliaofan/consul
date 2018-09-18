@@ -506,6 +506,86 @@ func TestAgent_Service(t *testing.T) {
 	}
 }
 
+// DEPRECATED(managed-proxies) - remove this In the interim, we need the newer
+// /agent/service/service to work for managed proxies so we can swithc the built
+// in proxy to use only that without breaking managed proxies early.
+func TestAgent_Service_DeprecatedManagedProxy(t *testing.T) {
+	t.Parallel()
+	a := NewTestAgent(t.Name(), `
+		connect {
+			proxy {
+				allow_managed_api_registration = true
+			}
+		}
+	`)
+	defer a.Shutdown()
+
+	testrpc.WaitForLeader(t, a.RPC, "dc1")
+
+	svc := &structs.ServiceDefinition{
+		Name: "web",
+		Port: 8000,
+		Check: structs.CheckType{
+			TTL: 10 * time.Second,
+		},
+		Connect: &structs.ServiceConnect{
+			Proxy: &structs.ServiceDefinitionConnectProxy{
+				// Fix the command otherwise the executable path ends up being random
+				// temp dir in every test run so the ContentHash will never match.
+				Command: []string{"foo"},
+				Config: map[string]interface{}{
+					"foo":          "bar",
+					"bind_address": "10.10.10.10",
+					"bind_port":    9999, // make this deterministic
+				},
+				Upstreams: structs.TestUpstreams(t),
+			},
+		},
+	}
+
+	require := require.New(t)
+
+	rr := httptest.NewRecorder()
+
+	req, _ := http.NewRequest("POST", "/v1/agent/services/register", jsonReader(svc))
+	_, err := a.srv.AgentRegisterService(rr, req)
+	require.NoError(err)
+	require.Equal(200, rr.Code, "body:\n"+rr.Body.String())
+
+	rr = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/v1/agent/service/web-proxy", nil)
+	obj, err := a.srv.AgentService(rr, req)
+	require.NoError(err)
+	require.Equal(200, rr.Code, "body:\n"+rr.Body.String())
+
+	gotService, ok := obj.(*api.AgentService)
+	require.True(ok)
+
+	expect := &api.AgentService{
+		Kind:        api.ServiceKindConnectProxy,
+		ID:          "web-proxy",
+		Service:     "web-proxy",
+		Port:        9999,
+		Address:     "10.10.10.10",
+		ContentHash: "e24f099e42e88317",
+		Proxy: &api.AgentServiceConnectProxyConfig{
+			DestinationServiceID:   "web",
+			DestinationServiceName: "web",
+			LocalServiceAddress:    "127.0.0.1",
+			LocalServicePort:       8000,
+			Config: map[string]interface{}{
+				"foo":                   "bar",
+				"bind_port":             9999,
+				"bind_address":          "10.10.10.10",
+				"local_service_address": "127.0.0.1:8000",
+			},
+			Upstreams: structs.TestAddDefaultsToUpstreams(t, svc.Connect.Proxy.Upstreams).ToAPI(),
+		},
+	}
+
+	require.Equal(expect, gotService)
+}
+
 func TestAgent_Checks(t *testing.T) {
 	t.Parallel()
 	a := NewTestAgent(t.Name(), "")
