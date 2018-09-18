@@ -97,18 +97,34 @@ func (a *Agent) sidecarServiceFromNodeService(ns *structs.NodeService, token str
 		// expensive to compute.
 		usedPorts := make(map[int]struct{})
 		for _, otherNS := range a.State.Services() {
-			if a.config.ConnectSidecarMinPort <= otherNS.Port &&
+			// Check if other port is in auto-assign range
+			if otherNS.Port >= a.config.ConnectSidecarMinPort &&
 				otherNS.Port <= a.config.ConnectSidecarMaxPort {
+				if otherNS.ID == sidecar.ID {
+					// This sidecar is already registered with an auto-port and is just
+					// being updated so pick the same port as before rather than allocate
+					// a new one.
+					sidecar.Port = otherNS.Port
+					break
+				}
 				usedPorts[otherNS.Port] = struct{}{}
 			}
+			// Note that the proxy might already be registered with a port that was
+			// not in the auto range or the auto range has moved. In either case we
+			// want to allocate a new one so it's no different from ignoring that it
+			// already exists as we do now.
 		}
 
-		// Iterate until we find lowest unused port
-		for p := a.config.ConnectSidecarMinPort; p <= a.config.ConnectSidecarMaxPort; p++ {
-			_, used := usedPorts[p]
-			if !used {
-				sidecar.Port = p
-				break
+		// Check we still need to assign a port and didn't find we already had one
+		// allocated.
+		if sidecar.Port < 1 {
+			// Iterate until we find lowest unused port
+			for p := a.config.ConnectSidecarMinPort; p <= a.config.ConnectSidecarMaxPort; p++ {
+				_, used := usedPorts[p]
+				if !used {
+					sidecar.Port = p
+					break
+				}
 			}
 		}
 	}
