@@ -427,13 +427,13 @@ func (l *State) AddCheck(check *structs.HealthCheck, token string) error {
 	return nil
 }
 
-// AddAliasCheck creates an alias check. When any check for the srcServiceID
-// is changed, checkID will reflect that using the same semantics as
+// AddAliasCheck creates an alias check. When any check for the srcServiceID is
+// changed, checkID will reflect that using the same semantics as
 // checks.CheckAlias.
 //
-// This is a local optimization so that the Alias check doesn't need to
-// use blocking queries against the remote server for check updates for
-// local services.
+// This is a local optimization so that the Alias check doesn't need to use
+// blocking queries against the remote server for check updates for local
+// services.
 func (l *State) AddAliasCheck(checkID types.CheckID, srcServiceID string, notifyCh chan<- struct{}) error {
 	l.Lock()
 	defer l.Unlock()
