@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/mitchellh/go-testing-interface"
 	"github.com/stretchr/testify/mock"
 )
@@ -47,6 +49,23 @@ func TestCacheGetChResult(t testing.T, ch <-chan interface{}, expected interface
 
 	case <-time.After(50 * time.Millisecond):
 		t.Fatalf("Result not sent on channel")
+	}
+}
+
+// TestCacheWatchChResult tests that the expected updated was delivered on a
+// Watch() chan within a reasonable period of time (it expects it to be
+// "immediate" but waits some milliseconds).
+func TestCacheWatchChResult(t testing.T, ch <-chan WatchUpdate, expected WatchUpdate) {
+	t.Helper()
+
+	select {
+	case result := <-ch:
+		// Ignore age as it's non-deterministic
+		result.Meta.Age = 0
+		require.Equal(t, expected, result)
+
+	case <-time.After(50 * time.Millisecond):
+		t.Fatalf("Result not sent on watch channel")
 	}
 }
 
