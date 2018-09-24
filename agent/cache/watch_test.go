@@ -12,7 +12,7 @@ import (
 )
 
 // Test that a type registered with a periodic refresh can be watched.
-func TestCacheWatch(t *testing.T) {
+func TestCacheNotify(t *testing.T) {
 	t.Parallel()
 
 	typ := TestType(t)
@@ -49,15 +49,19 @@ func TestCacheWatch(t *testing.T) {
 	require := require.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	ch, err := c.Watch(ctx, "t", TestRequest(t, RequestInfo{Key: "hello"}))
+	ch := make(chan UpdateEvent)
+
+	err := c.Notify(ctx, "t", TestRequest(t, RequestInfo{Key: "hello"}), "test", ch)
 	require.NoError(err)
 
 	// Should receive the first result pretty soon
-	TestCacheWatchChResult(t, ch, WatchUpdate{
-		Result: 1,
-		Meta:   ResultMeta{Hit: false, Index: 4},
-		Err:    nil,
+	TestCacheNotifyChResult(t, ch, UpdateEvent{
+		CorrelationID: "test",
+		Result:        1,
+		Meta:          ResultMeta{Hit: false, Index: 4},
+		Err:           nil,
 	})
 
 	// There should be no more updates delivered yet
@@ -67,12 +71,29 @@ func TestCacheWatch(t *testing.T) {
 	close(trigger[0])
 
 	// Should receive the next result pretty soon
-	TestCacheWatchChResult(t, ch, WatchUpdate{
-		Result: 12,
+	TestCacheNotifyChResult(t, ch, UpdateEvent{
+		CorrelationID: "test",
+		Result:        12,
 		// Note these are never cache "hits" because blocking will wait until there
 		// is a new value at which point it's not considered a hit.
 		Meta: ResultMeta{Hit: false, Index: 5},
 		Err:  nil,
+	})
+
+	// Registere a second observer using same chan and request. Note that this is
+	// testing a few things implicitly:
+	//  - that multiple watchers on the same cache entity are de-duped in their
+	//    requests to the "backend"
+	//  - that multiple watchers can distinguish their results using correlationID
+	err = c.Notify(ctx, "t", TestRequest(t, RequestInfo{Key: "hello"}), "test2", ch)
+	require.NoError(err)
+
+	// Should get test2 notify immediately, and it should be a cache hit
+	TestCacheNotifyChResult(t, ch, UpdateEvent{
+		CorrelationID: "test2",
+		Result:        12,
+		Meta:          ResultMeta{Hit: true, Index: 5},
+		Err:           nil,
 	})
 
 	// We could wait for a full timeout but we can't directly observe it so
@@ -89,25 +110,38 @@ func TestCacheWatch(t *testing.T) {
 	// Trigger final update
 	close(trigger[2])
 
-	TestCacheWatchChResult(t, ch, WatchUpdate{
-		Result: 42,
-		Meta:   ResultMeta{Hit: false, Index: 7},
-		Err:    nil,
+	TestCacheNotifyChResult(t, ch, UpdateEvent{
+		CorrelationID: "test",
+		Result:        42,
+		Meta:          ResultMeta{Hit: false, Index: 7},
+		Err:           nil,
+	}, UpdateEvent{
+		CorrelationID: "test2",
+		Result:        42,
+		Meta:          ResultMeta{Hit: false, Index: 7},
+		Err:           nil,
 	})
 
-	t.Log("Cancelling")
-	cancel()
-	t.Log("Cancelled")
+	// Sanity check closing chan before context is cancelled doesn't panic
+	//close(ch)
 
-	// It's likely but not certain that the Watcher was already blocking on the
-	// next call. Since it won't timeout for 10 minutes, we can verify the
-	// cancellation worked by early terminating the call.
+	// Close context
+	cancel()
+
+	// It's likely but not certain that at least one of the watchers was blocked
+	// on the next cache Get so trigger that to timeout so we can observe the
+	// watch goroutines being cleaned up. This is necessary since currently we
+	// have no way to interrupt a blocking query. In practice it's fine to know
+	// that after 10 mins max the blocking query will return and the resources
+	// will be cleaned.
 	close(trigger[3])
 
-	time.Sleep(1 * time.Second)
-
-	// ch should now be closed (return zero value)
-	TestCacheWatchChResult(t, ch, WatchUpdate{})
+	// I want to test that cancelling the context cleans up goroutines (which it
+	// does from manual verification with debugger etc). I had a check based on a
+	// similar approach to https://golang.org/src/net/http/main_test.go#L60 but it
+	// was just too flaky because it relies on the timing of the error backoff
+	// timer goroutines and similar so I've given up for now as I have more
+	// important things to get working.
 }
 
 // Test that a refresh performs a backoff.
@@ -134,14 +168,17 @@ func TestCacheWatch_ErrorBackoff(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := c.Watch(ctx, "t", TestRequest(t, RequestInfo{Key: "hello"}))
+	ch := make(chan UpdateEvent)
+
+	err := c.Notify(ctx, "t", TestRequest(t, RequestInfo{Key: "hello"}), "test", ch)
 	require.NoError(err)
 
 	// Should receive the first result pretty soon
-	TestCacheWatchChResult(t, ch, WatchUpdate{
-		Result: 1,
-		Meta:   ResultMeta{Hit: false, Index: 4},
-		Err:    nil,
+	TestCacheNotifyChResult(t, ch, UpdateEvent{
+		CorrelationID: "test",
+		Result:        1,
+		Meta:          ResultMeta{Hit: false, Index: 4},
+		Err:           nil,
 	})
 
 	numErrors := 0
