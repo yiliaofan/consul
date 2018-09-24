@@ -29,7 +29,13 @@ func TestCacheWatch(t *testing.T) {
 	}
 
 	// Configure the type
-	typ.Static(FetchResult{Value: 1, Index: 4}, nil).Once()
+	typ.Static(FetchResult{Value: 1, Index: 4}, nil).Once().Run(func(args mock.Arguments) {
+		// Assert the right request type - all real Fetch implementations do this so
+		// it keeps us honest that Watch doesn't require type mangling which will
+		// break in real life (hint: it did on the first attempt)
+		_, ok := args.Get(1).(*MockRequest)
+		require.True(t, ok)
+	})
 	typ.Static(FetchResult{Value: 12, Index: 5}, nil).Once().WaitUntil(trigger[0])
 	typ.Static(FetchResult{Value: 12, Index: 5}, nil).Once().WaitUntil(trigger[1])
 	typ.Static(FetchResult{Value: 42, Index: 7}, nil).Once().WaitUntil(trigger[2])

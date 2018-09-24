@@ -13,27 +13,24 @@ type WatchUpdate struct {
 	Err    error
 }
 
-// indexManagedRequest is a wrapper around a user-passed Request that allows us
-// to manage the blocking index without knowing how to modify the concrete
-// Request type.
-type indexManagedRequest struct {
-	r        Request
-	minIndex uint64
-}
-
-// CacheInfo implements Request
-func (r *indexManagedRequest) CacheInfo() RequestInfo {
-	info := r.r.CacheInfo()
-	info.MinIndex = r.minIndex
-	info.Timeout = 10 * time.Minute
-	return info
-}
-
 // Watch behaves like Get but return a chan to be watched for updates
 // asynchronously. It is a helper that abstracts code from perfroming their own
 // "blocking" query logic against a cache key to watch for changes and to
 // maintain the key in cache actively. It will continue to perform blocking Get
 // requests until the context is canceled.
+//
+// The returned chan is only minimally buffered so if the caller doesn't consume
+// from it quickly enough, the Watch loop will block. When the chan is later
+// drained, watching resumes correctly, however if the pause is long enough, it
+// will prevent active blocking Get on the cache and may allow the Cache-Type's
+// TTL to remove it locally. Even then when the chan is drained again, the new
+// Get will re-fetch the entry from servers and resume behaviour transparently.
+//
+// The passed context must be cancelled or timeout in order to free resources
+// and stop maintaining the value in cache. Typically request-scoped resources
+// do this but if a long-lived context like context.Background is used, then the
+// caller must arrange for it to be cancelled when the watch is no longer
+// needed.
 func (c *Cache) Watch(ctx context.Context, t string, r Request) (<-chan WatchUpdate, error) {
 	ch := make(chan WatchUpdate, 1)
 
@@ -50,7 +47,7 @@ func (c *Cache) Watch(ctx context.Context, t string, r Request) (<-chan WatchUpd
 
 	// Always start at 0 index to deliver the inital (possibly currently cached
 	// value).
-	wrappedR := &indexManagedRequest{r, 0}
+	index := uint64(0)
 
 	go func() {
 		defer close(ch)
@@ -64,7 +61,7 @@ func (c *Cache) Watch(ctx context.Context, t string, r Request) (<-chan WatchUpd
 			}
 
 			// Blocking request
-			res, meta, err := c.Get(t, wrappedR)
+			res, meta, err := c.getWithIndex(t, r, index)
 
 			// Check context hasn't been cancelled
 			if ctx.Err() != nil {
@@ -73,12 +70,16 @@ func (c *Cache) Watch(ctx context.Context, t string, r Request) (<-chan WatchUpd
 
 			// Check the index of the value returned in the cache entry to be sure it
 			// changed
-			if wrappedR.minIndex < meta.Index {
+			if index < meta.Index {
 				u := WatchUpdate{res, meta, err}
-				ch <- u
+				select {
+				case ch <- u:
+				case <-ctx.Done():
+					return
+				}
 
 				// Update index for next request
-				wrappedR.minIndex = meta.Index
+				index = meta.Index
 			}
 
 			// Handle errors with backoff. Badly behaved blocking calls that returned
@@ -93,8 +94,8 @@ func (c *Cache) Watch(ctx context.Context, t string, r Request) (<-chan WatchUpd
 				time.Sleep(wait)
 			}
 			// Sanity check we always request blocking on second pass
-			if wrappedR.minIndex < 1 {
-				wrappedR.minIndex = 1
+			if index < 1 {
+				index = 1
 			}
 		}
 	}()

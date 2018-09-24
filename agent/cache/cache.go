@@ -202,13 +202,20 @@ func (c *Cache) RegisterType(n string, typ Type, opts *RegisterOptions) {
 // error is returned on timeout. This matches the behavior of Consul blocking
 // queries.
 func (c *Cache) Get(t string, r Request) (interface{}, ResultMeta, error) {
+	return c.getWithIndex(t, r, r.CacheInfo().MinIndex)
+}
+
+// getWithIndex implements the main Get functionality but allows internal
+// callers (Watch) to manipulate the blocking index separately from the actual
+// request object.
+func (c *Cache) getWithIndex(t string, r Request, minIndex uint64) (interface{}, ResultMeta, error) {
 	info := r.CacheInfo()
 	if info.Key == "" {
 		metrics.IncrCounter([]string{"consul", "cache", "bypass"}, 1)
 
 		// If no key is specified, then we do not cache this request.
 		// Pass directly through to the backend.
-		return c.fetchDirect(t, r)
+		return c.fetchDirect(t, r, minIndex)
 	}
 
 	// Get the actual key for our entry
@@ -244,7 +251,7 @@ RETRY_GET:
 	// Check index is not specified or lower than value, or the type doesn't
 	// support blocking.
 	if cacheHit && supportsBlocking &&
-		info.MinIndex > 0 && info.MinIndex >= entry.Index {
+		minIndex > 0 && minIndex >= entry.Index {
 		// MinIndex was given and matches or is higher than current value so we
 		// ignore the cache and fallthrough to blocking on a new value below.
 		cacheHit = false
@@ -311,7 +318,7 @@ RETRY_GET:
 		// We increment two different counters for cache misses depending on
 		// whether we're missing because we didn't have the data at all,
 		// or if we're missing because we're blocking on a set index.
-		if info.MinIndex == 0 {
+		if minIndex == 0 {
 			metrics.IncrCounter([]string{"consul", "cache", t, "miss_new"}, 1)
 		} else {
 			metrics.IncrCounter([]string{"consul", "cache", t, "miss_block"}, 1)
@@ -550,7 +557,7 @@ func (c *Cache) fetch(t, key string, r Request, allowNew bool, attempt uint) (<-
 // fetchDirect fetches the given request with no caching. Because this
 // bypasses the caching entirely, multiple matching requests will result
 // in multiple actual RPC calls (unlike fetch).
-func (c *Cache) fetchDirect(t string, r Request) (interface{}, ResultMeta, error) {
+func (c *Cache) fetchDirect(t string, r Request, minIndex uint64) (interface{}, ResultMeta, error) {
 	// Get the type that we're fetching
 	c.typesLock.RLock()
 	tEntry, ok := c.types[t]
@@ -561,7 +568,7 @@ func (c *Cache) fetchDirect(t string, r Request) (interface{}, ResultMeta, error
 
 	// Fetch it with the min index specified directly by the request.
 	result, err := tEntry.Type.Fetch(FetchOptions{
-		MinIndex: r.CacheInfo().MinIndex,
+		MinIndex: minIndex,
 	}, r)
 	if err != nil {
 		return nil, ResultMeta{}, err
