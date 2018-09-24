@@ -66,8 +66,6 @@ func (c *Cache) Notify(ctx context.Context, t string, r Request,
 	index := uint64(0)
 
 	go func() {
-		defer fmt.Println("Exited", correlationID)
-
 		var failures uint
 
 		for {
