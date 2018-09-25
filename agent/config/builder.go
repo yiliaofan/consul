@@ -708,6 +708,7 @@ func (b *Builder) Build() (rt RuntimeConfig, err error) {
 		EnableAgentTLSForChecks:                 b.boolVal(c.EnableAgentTLSForChecks),
 		EnableDebug:                             b.boolVal(c.EnableDebug),
 		EnableScriptChecks:                      b.boolVal(c.EnableScriptChecks),
+		EnableLocalScriptChecks:                 b.boolVal(c.EnableLocalScriptChecks),
 		EnableSyslog:                            b.boolVal(c.EnableSyslog),
 		EnableUI:                                b.boolVal(c.UI),
 		EncryptKey:                              b.stringVal(c.EncryptKey),

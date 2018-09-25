@@ -2689,6 +2689,7 @@ func TestFullConfig(t *testing.T) {
 			"enable_agent_tls_for_checks": true,
 			"enable_debug": true,
 			"enable_script_checks": true,
+			"enable_local_script_checks": true,
 			"enable_syslog": true,
 			"encrypt": "A4wELWqH",
 			"encrypt_verify_incoming": true,
@@ -3188,6 +3189,7 @@ func TestFullConfig(t *testing.T) {
 			enable_agent_tls_for_checks = true
 			enable_debug = true
 			enable_script_checks = true
+			enable_local_script_checks = true
 			enable_syslog = true
 			encrypt = "A4wELWqH"
 			encrypt_verify_incoming = true
@@ -3780,6 +3782,7 @@ func TestFullConfig(t *testing.T) {
 		EnableAgentTLSForChecks:          true,
 		EnableDebug:                      true,
 		EnableScriptChecks:               true,
+		EnableLocalScriptChecks:          true,
 		EnableSyslog:                     true,
 		EnableUI:                         true,
 		EncryptKey:                       "A4wELWqH",
@@ -4518,6 +4521,7 @@ func TestSanitize(t *testing.T) {
 		"EnableAgentTLSForChecks": false,
 		"EnableDebug": false,
 		"EnableScriptChecks": false,
+		"EnableLocalScriptChecks": false,
 		"EnableSyslog": false,
 		"EnableUI": false,
 		"EncryptKey": "hidden",
