@@ -30,6 +30,12 @@ There are several different kinds of checks:
   it has spawned once the timeout has passed.
   In Consul 0.9.0 and later, the agent must be configured with [`enable_script_checks`]
   (/docs/agent/options.html#_enable_script_checks) set to `true` in order to enable script checks.
+  Alternatively, script checks can be selectively enabled based on where they are declared.
+  To only allow script checks defined in local config files use [`enable_local_script_checks`]
+  (/docs/agent/options.html#_enable_local_script_checks). To only allow them from the HTTP API
+  use [`enable_remote_script_checks`](/docs/agent/options.html#_enable_remote_script_checks).
+  Note that setting both `enable_local_script_checks` and `enable_remote_script_checks` to true
+  is equivalent to setting `enable_script_checks` to true.
 
 * HTTP + Interval - These checks make an HTTP `GET` request every Interval (e.g.
   every 30 seconds) to the specified URL. The status of the service depends on
