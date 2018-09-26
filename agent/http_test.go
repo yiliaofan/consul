@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/consul/testrpc"
 	"github.com/hashicorp/consul/testutil"
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/stretchr/testify/require"
@@ -961,6 +963,126 @@ func TestParseToken_ProxyTokenResolve(t *testing.T) {
 			_, err := check.handler(a.srv, resp, req)
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestAllowedNets(t *testing.T) {
+	type testVal struct {
+		nets     []string
+		ip       string
+		expected bool
+	}
+
+	for _, v := range []testVal{
+		{
+			ip:       "156.124.222.351",
+			expected: true,
+		},
+		{
+			nets:     []string{"0.0.0.0/0"},
+			ip:       "115.124.32.64",
+			expected: true,
+		},
+		{
+			nets:     []string{"255.255.255.255/32"},
+			ip:       "127.0.0.1",
+			expected: false,
+		},
+		{
+			nets:     []string{"255.255.255.255/32", "127.0.0.1/8"},
+			ip:       "127.0.0.1",
+			expected: true,
+		},
+	} {
+		var nets []*net.IPNet
+		for _, n := range v.nets {
+			_, in, err := net.ParseCIDR(n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nets = append(nets, in)
+		}
+
+		a := &TestAgent{
+			Name: t.Name(),
+		}
+		a.Start()
+		defer a.Shutdown()
+		testrpc.WaitForTestAgent(t, a.RPC, "dc1")
+
+		a.config.AllowWriteHTTPFrom = nets
+
+		err := a.srv.checkWriteAccess(&http.Request{
+			RemoteAddr: fmt.Sprintf("%s:16544", v.ip),
+		})
+		actual := err == nil
+
+		if actual != v.expected {
+			t.Fatalf("bad checkWriteAccess for values %+v, got %v", v, err)
+		}
+
+		_, isForbiddenErr := err.(ForbiddenError)
+		if err != nil && !isForbiddenErr {
+			t.Fatalf("expected ForbiddenError but got: %s", err)
+		}
+	}
+}
+
+func TestProtectedEndpointsDenied(t *testing.T) {
+	// httptest.NewRequests gives the RemoteAddr 192.0.2.1
+	_, allowedNet, _ := net.ParseCIDR("127.0.0.1/8")
+
+	a := &TestAgent{
+		Name: t.Name(),
+	}
+	a.Start()
+	defer a.Shutdown()
+	testrpc.WaitForTestAgent(t, a.RPC, "dc1")
+	a.config.AllowWriteHTTPFrom = []*net.IPNet{allowedNet}
+
+	type endpoint struct {
+		method  string
+		handler unboundEndpoint
+	}
+
+	protectedEndpoints := []endpoint{
+		{"PUT", (*HTTPServer).ACLBootstrap},
+		{"PUT", (*HTTPServer).ACLCreate},
+		{"PUT", (*HTTPServer).ACLUpdate},
+		{"PUT", (*HTTPServer).ACLDestroy},
+		{"PUT", (*HTTPServer).ACLClone},
+		{"PUT", (*HTTPServer).AgentToken},
+		{"PUT", (*HTTPServer).AgentNodeMaintenance},
+		{"PUT", (*HTTPServer).AgentReload},
+		{"PUT", (*HTTPServer).AgentJoin},
+		{"PUT", (*HTTPServer).AgentLeave},
+		{"PUT", (*HTTPServer).AgentForceLeave},
+		{"PUT", (*HTTPServer).AgentRegisterCheck},
+		{"PUT", (*HTTPServer).AgentDeregisterCheck},
+		{"PUT", (*HTTPServer).AgentCheckPass},
+		{"PUT", (*HTTPServer).AgentCheckWarn},
+		{"PUT", (*HTTPServer).AgentCheckFail},
+		{"PUT", (*HTTPServer).AgentCheckUpdate},
+		{"POST", (*HTTPServer).AgentConnectAuthorize},
+		{"PUT", (*HTTPServer).AgentRegisterService},
+		{"PUT", (*HTTPServer).AgentDeregisterService},
+		{"PUT", (*HTTPServer).AgentServiceMaintenance},
+		{"PUT", (*HTTPServer).CatalogRegister},
+		{"PUT", (*HTTPServer).CatalogDeregister},
+	}
+
+	for _, e := range protectedEndpoints {
+		req := httptest.NewRequest(e.method, "/", nil)
+		res := httptest.NewRecorder()
+
+		_, err := e.handler(a.srv, res, req)
+		if err == nil {
+			t.Fatalf("expected error: %s %s", e.method, runtime.FuncForPC(reflect.ValueOf(e.handler).Pointer()).Name())
+		}
+		_, isForbiddenErr := err.(ForbiddenError)
+		if !isForbiddenErr {
+			t.Fatalf("expected forbidden error, instead got: %s", err)
+		}
 	}
 }
 

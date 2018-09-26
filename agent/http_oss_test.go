@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/consul/logger"
+	"github.com/hashicorp/consul/testrpc"
 )
 
 // extra endpoints that should be tested, and their allowed methods
@@ -48,6 +49,7 @@ func TestHTTPAPI_MethodNotAllowed_OSS(t *testing.T) {
 	a := NewTestAgent(t.Name(), `acl_datacenter = "dc1"`)
 	a.Agent.LogWriter = logger.NewLogWriter(512)
 	defer a.Shutdown()
+	testrpc.WaitForTestAgent(t, a.RPC, "dc1")
 
 	all := []string{"GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"}
 	client := http.Client{}
