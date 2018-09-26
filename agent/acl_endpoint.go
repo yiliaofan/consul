@@ -29,6 +29,10 @@ func (s *HTTPServer) checkACLDisabled(resp http.ResponseWriter, req *http.Reques
 // ACLBootstrap is used to perform a one-time ACL bootstrap operation on
 // a cluster to get the first management token.
 func (s *HTTPServer) ACLBootstrap(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	if s.checkACLDisabled(resp, req) {
 		return nil, nil
 	}
@@ -53,6 +57,10 @@ func (s *HTTPServer) ACLBootstrap(resp http.ResponseWriter, req *http.Request) (
 }
 
 func (s *HTTPServer) ACLDestroy(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	if s.checkACLDisabled(resp, req) {
 		return nil, nil
 	}
@@ -79,6 +87,10 @@ func (s *HTTPServer) ACLDestroy(resp http.ResponseWriter, req *http.Request) (in
 }
 
 func (s *HTTPServer) ACLCreate(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	if s.checkACLDisabled(resp, req) {
 		return nil, nil
 	}
@@ -86,6 +98,10 @@ func (s *HTTPServer) ACLCreate(resp http.ResponseWriter, req *http.Request) (int
 }
 
 func (s *HTTPServer) ACLUpdate(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	if s.checkACLDisabled(resp, req) {
 		return nil, nil
 	}
@@ -130,6 +146,10 @@ func (s *HTTPServer) aclSet(resp http.ResponseWriter, req *http.Request, update 
 }
 
 func (s *HTTPServer) ACLClone(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	if s.checkACLDisabled(resp, req) {
 		return nil, nil
 	}

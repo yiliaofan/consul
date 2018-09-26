@@ -124,6 +124,10 @@ func (s *HTTPServer) AgentMetrics(resp http.ResponseWriter, req *http.Request) (
 }
 
 func (s *HTTPServer) AgentReload(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	// Fetch the ACL token, if any, and enforce agent policy.
 	var token string
 	s.parseToken(req, &token)
@@ -283,6 +287,10 @@ func (s *HTTPServer) AgentMembers(resp http.ResponseWriter, req *http.Request) (
 }
 
 func (s *HTTPServer) AgentJoin(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	// Fetch the ACL token, if any, and enforce agent policy.
 	var token string
 	s.parseToken(req, &token)
@@ -311,6 +319,10 @@ func (s *HTTPServer) AgentJoin(resp http.ResponseWriter, req *http.Request) (int
 }
 
 func (s *HTTPServer) AgentLeave(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	// Fetch the ACL token, if any, and enforce agent policy.
 	var token string
 	s.parseToken(req, &token)
@@ -329,6 +341,10 @@ func (s *HTTPServer) AgentLeave(resp http.ResponseWriter, req *http.Request) (in
 }
 
 func (s *HTTPServer) AgentForceLeave(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	// Fetch the ACL token, if any, and enforce agent policy.
 	var token string
 	s.parseToken(req, &token)
@@ -354,6 +370,10 @@ func (s *HTTPServer) syncChanges() {
 }
 
 func (s *HTTPServer) AgentRegisterCheck(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	var args structs.CheckDefinition
 	// Fixup the type decode of TTL or Interval.
 	decodeCB := func(raw interface{}) error {
@@ -406,6 +426,10 @@ func (s *HTTPServer) AgentRegisterCheck(resp http.ResponseWriter, req *http.Requ
 }
 
 func (s *HTTPServer) AgentDeregisterCheck(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	checkID := types.CheckID(strings.TrimPrefix(req.URL.Path, "/v1/agent/check/deregister/"))
 
 	// Get the provided token, if any, and vet against any ACL policies.
@@ -423,6 +447,10 @@ func (s *HTTPServer) AgentDeregisterCheck(resp http.ResponseWriter, req *http.Re
 }
 
 func (s *HTTPServer) AgentCheckPass(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	checkID := types.CheckID(strings.TrimPrefix(req.URL.Path, "/v1/agent/check/pass/"))
 	note := req.URL.Query().Get("note")
 
@@ -441,6 +469,10 @@ func (s *HTTPServer) AgentCheckPass(resp http.ResponseWriter, req *http.Request)
 }
 
 func (s *HTTPServer) AgentCheckWarn(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	checkID := types.CheckID(strings.TrimPrefix(req.URL.Path, "/v1/agent/check/warn/"))
 	note := req.URL.Query().Get("note")
 
@@ -459,6 +491,10 @@ func (s *HTTPServer) AgentCheckWarn(resp http.ResponseWriter, req *http.Request)
 }
 
 func (s *HTTPServer) AgentCheckFail(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	checkID := types.CheckID(strings.TrimPrefix(req.URL.Path, "/v1/agent/check/fail/"))
 	note := req.URL.Query().Get("note")
 
@@ -492,6 +528,10 @@ type checkUpdate struct {
 // AgentCheckUpdate is a PUT-based alternative to the GET-based Pass/Warn/Fail
 // APIs.
 func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	var update checkUpdate
 	if err := decodeBody(req, &update, nil); err != nil {
 		resp.WriteHeader(http.StatusBadRequest)
@@ -652,6 +692,10 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 }
 
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	var args structs.ServiceDefinition
 	// Fixup the type decode of TTL or Interval if a check if provided.
 	decodeCB := func(raw interface{}) error {
@@ -781,6 +825,10 @@ func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Re
 }
 
 func (s *HTTPServer) AgentDeregisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/service/deregister/")
 
 	// Get the provided token, if any, and vet against any ACL policies.
@@ -807,6 +855,10 @@ func (s *HTTPServer) AgentDeregisterService(resp http.ResponseWriter, req *http.
 }
 
 func (s *HTTPServer) AgentServiceMaintenance(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	// Ensure we have a service ID
 	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/service/maintenance/")
 	if serviceID == "" {
@@ -857,6 +909,10 @@ func (s *HTTPServer) AgentServiceMaintenance(resp http.ResponseWriter, req *http
 }
 
 func (s *HTTPServer) AgentNodeMaintenance(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	// Ensure we have some action
 	params := req.URL.Query()
 	if _, ok := params["enable"]; !ok {
@@ -985,6 +1041,10 @@ func (h *httpLogHandler) HandleLog(log string) {
 }
 
 func (s *HTTPServer) AgentToken(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	if s.checkACLDisabled(resp, req) {
 		return nil, nil
 	}
@@ -1293,6 +1353,10 @@ func (s *HTTPServer) agentLocalBlockingQuery(resp http.ResponseWriter, hash stri
 // Note: when this logic changes, consider if the Intention.Check RPC method
 // also needs to be updated.
 func (s *HTTPServer) AgentConnectAuthorize(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	// Fetch the token
 	var token string
 	s.parseToken(req, &token)

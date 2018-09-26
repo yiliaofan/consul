@@ -145,6 +145,10 @@ func filterCoordinates(req *http.Request, in structs.Coordinates) structs.Coordi
 
 // CoordinateUpdate inserts or updates the LAN coordinate of a node.
 func (s *HTTPServer) CoordinateUpdate(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	if s.checkCoordinateDisabled(resp, req) {
 		return nil, nil
 	}
