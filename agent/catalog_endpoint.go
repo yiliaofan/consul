@@ -12,6 +12,10 @@ import (
 var durations = NewDurationFixer("interval", "timeout", "deregistercriticalserviceafter")
 
 func (s *HTTPServer) CatalogRegister(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	metrics.IncrCounterWithLabels([]string{"client", "api", "catalog_register"}, 1,
 		[]metrics.Label{{Name: "node", Value: s.nodeName()}})
 
@@ -41,6 +45,10 @@ func (s *HTTPServer) CatalogRegister(resp http.ResponseWriter, req *http.Request
 }
 
 func (s *HTTPServer) CatalogDeregister(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	if err := s.checkWriteAccess(req); err != nil {
+		return nil, err
+	}
+
 	metrics.IncrCounterWithLabels([]string{"client", "api", "catalog_deregister"}, 1,
 		[]metrics.Label{{Name: "node", Value: s.nodeName()}})
 

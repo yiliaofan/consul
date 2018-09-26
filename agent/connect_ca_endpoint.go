@@ -30,6 +30,10 @@ func (s *HTTPServer) ConnectCAConfiguration(resp http.ResponseWriter, req *http.
 		return s.ConnectCAConfigurationGet(resp, req)
 
 	case "PUT":
+		if err := s.checkWriteAccess(req); err != nil {
+			return nil, err
+		}
+
 		return s.ConnectCAConfigurationSet(resp, req)
 
 	default:
