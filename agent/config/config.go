@@ -439,8 +439,9 @@ type DNS struct {
 }
 
 type HTTPConfig struct {
-	BlockEndpoints  []string          `json:"block_endpoints,omitempty" hcl:"block_endpoints" mapstructure:"block_endpoints"`
-	ResponseHeaders map[string]string `json:"response_headers,omitempty" hcl:"response_headers" mapstructure:"response_headers"`
+	BlockEndpoints   []string          `json:"block_endpoints,omitempty" hcl:"block_endpoints" mapstructure:"block_endpoints"`
+	WriteAllowedNets []string          `json:"write_allowed_net,omitempty" hcl:"write_allowed_net" mapstructure:"write_allowed_net"`
+	ResponseHeaders  map[string]string `json:"response_headers,omitempty" hcl:"response_headers" mapstructure:"response_headers"`
 }
 
 type Performance struct {

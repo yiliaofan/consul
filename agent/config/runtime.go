@@ -295,6 +295,13 @@ type RuntimeConfig struct {
 	// hcl: http_config { block_endpoints = []string }
 	HTTPBlockEndpoints []string
 
+	// WriteAllowedNets restricts the agent write endpoints to the given
+	// networks. Any request to a protected endpoint that is not mactched
+	// by one of these networks will get a 403 response.
+	//
+	// hcl: http_config { write_allowed_nets = []string }
+	WriteAllowedNets []*net.IPNet
+
 	// HTTPResponseHeaders are used to add HTTP header response fields to the HTTP API responses.
 	//
 	// hcl: http_config { response_headers = map[string]string }
