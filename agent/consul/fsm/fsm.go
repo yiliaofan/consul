@@ -60,11 +60,13 @@ type FSM struct {
 	state     *state.Store
 
 	gc *state.TombstoneGC
+
+	clock state.Clock
 }
 
 // New is used to construct a new FSM with a blank state.
-func New(gc *state.TombstoneGC, logOutput io.Writer) (*FSM, error) {
-	stateNew, err := state.NewStateStore(gc)
+func New(gc *state.TombstoneGC, logOutput io.Writer, clock state.Clock) (*FSM, error) {
+	stateNew, err := state.NewStateStore(gc, clock)
 	if err != nil {
 		return nil, err
 	}
@@ -75,6 +77,7 @@ func New(gc *state.TombstoneGC, logOutput io.Writer) (*FSM, error) {
 		apply:     make(map[structs.MessageType]command),
 		state:     stateNew,
 		gc:        gc,
+		clock:     clock,
 	}
 
 	// Build out the apply dispatch table based on the registered commands.
@@ -136,7 +139,7 @@ func (c *FSM) Restore(old io.ReadCloser) error {
 	defer old.Close()
 
 	// Create a new state store.
-	stateNew, err := state.NewStateStore(c.gc)
+	stateNew, err := state.NewStateStore(c.gc, c.clock)
 	if err != nil {
 		return err
 	}

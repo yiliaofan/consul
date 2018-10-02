@@ -361,6 +361,8 @@ type Node struct {
 	Meta            map[string]string
 
 	RaftIndex
+
+	LastModifyTime time.Time
 }
 type Nodes []*Node
 
@@ -466,6 +468,8 @@ type ServiceNode struct {
 	ServiceConnect           ServiceConnect
 
 	RaftIndex
+
+	LastModifyTime time.Time
 }
 
 // PartialClone() returns a clone of the given service node, minus the node-
@@ -519,6 +523,7 @@ func (s *ServiceNode) ToNodeService() *NodeService {
 			CreateIndex: s.CreateIndex,
 			ModifyIndex: s.ModifyIndex,
 		},
+		LastModifyTime: s.LastModifyTime,
 	}
 }
 
@@ -574,6 +579,8 @@ type NodeService struct {
 	Connect ServiceConnect
 
 	RaftIndex
+
+	LastModifyTime time.Time
 }
 
 // ServiceConnect are the shared Connect settings between all service
@@ -718,6 +725,8 @@ type HealthCheck struct {
 	Definition HealthCheckDefinition
 
 	RaftIndex
+
+	LastModifyTime time.Time
 }
 
 type HealthCheckDefinition struct {

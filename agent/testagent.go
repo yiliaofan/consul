@@ -35,6 +35,9 @@ func init() {
 // TempDir defines the base dir for temporary directories.
 var TempDir = os.TempDir()
 
+// ClockTime is the time returned by the clock when running TestAgent
+var ClockTime = time.Date(2000, time.January, 1, 12, 0, 0, 0, time.UTC)
+
 // TestAgent encapsulates an Agent with a default configuration and
 // startup procedure suitable for testing. It panics if there are errors
 // during creation or startup instead of returning errors. It manages a
@@ -77,6 +80,9 @@ type TestAgent struct {
 	// one.
 	UseTLS bool
 
+	// Now is the fake time used by the agent.
+	Now time.Time
+
 	// dns is a reference to the first started DNS endpoint.
 	// It is valid after Start().
 	dns *DNSServer
@@ -95,7 +101,11 @@ type TestAgent struct {
 // caller should call Shutdown() to stop the agent and remove temporary
 // directories.
 func NewTestAgent(name string, hcl string) *TestAgent {
-	a := &TestAgent{Name: name, HCL: hcl}
+	a := &TestAgent{
+		Name: name,
+		HCL:  hcl,
+		Now:  ClockTime,
+	}
 	a.Start()
 	return a
 }
@@ -147,6 +157,9 @@ func (a *TestAgent) Start() *TestAgent {
 		agent, err := New(a.Config)
 		if err != nil {
 			panic(fmt.Sprintf("Error creating agent: %s", err))
+		}
+		agent.clock = func() time.Time {
+			return a.Now
 		}
 
 		logOutput := a.LogOutput

@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/go-memdb"
 )
 
+var ClockTime = time.Date(2000, time.January, 1, 12, 0, 0, 0, time.UTC)
+
 func testUUID() string {
 	buf := make([]byte, 16)
 	if _, err := crand.Read(buf); err != nil {
@@ -26,7 +28,13 @@ func testUUID() string {
 }
 
 func testStateStore(t *testing.T) *Store {
-	s, err := NewStateStore(nil)
+	return testStateStoreWithTime(t, func() time.Time {
+		return ClockTime
+	})
+}
+
+func testStateStoreWithTime(t *testing.T, clock Clock) *Store {
+	s, err := NewStateStore(nil, clock)
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}

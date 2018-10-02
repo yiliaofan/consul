@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/consul/types"
 	"github.com/hashicorp/go-memdb"
@@ -67,6 +68,8 @@ type Store struct {
 
 	// lockDelay holds expiration times for locks associated with keys.
 	lockDelay *Delay
+
+	clock func() time.Time
 }
 
 // Snapshot is used to provide a point-in-time snapshot. It
@@ -100,8 +103,11 @@ type sessionCheck struct {
 	Session string
 }
 
+// Clock represents a time source
+type Clock func() time.Time
+
 // NewStateStore creates a new in-memory state storage layer.
-func NewStateStore(gc *TombstoneGC) (*Store, error) {
+func NewStateStore(gc *TombstoneGC, clock Clock) (*Store, error) {
 	// Create the in-memory DB.
 	schema := stateStoreSchema()
 	db, err := memdb.NewMemDB(schema)
@@ -116,6 +122,7 @@ func NewStateStore(gc *TombstoneGC) (*Store, error) {
 		abandonCh:    make(chan struct{}),
 		kvsGraveyard: NewGraveyard(gc),
 		lockDelay:    NewDelay(),
+		clock:        clock,
 	}
 	return s, nil
 }

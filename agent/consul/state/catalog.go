@@ -431,14 +431,17 @@ func (s *Store) ensureNodeTxn(tx *memdb.Txn, idx uint64, node *structs.Node) err
 	if n != nil {
 		node.CreateIndex = n.CreateIndex
 		node.ModifyIndex = n.ModifyIndex
+		node.LastModifyTime = n.LastModifyTime
 		// We do not need to update anything
 		if node.IsSame(n) {
 			return nil
 		}
 		node.ModifyIndex = idx
+		node.LastModifyTime = s.clock()
 	} else {
 		node.CreateIndex = idx
 		node.ModifyIndex = idx
+		node.LastModifyTime = s.clock()
 	}
 
 	// Insert the node and update the index.
@@ -697,14 +700,17 @@ func (s *Store) ensureServiceTxn(tx *memdb.Txn, idx uint64, node string, svc *st
 		serviceNode := existing.(*structs.ServiceNode)
 		entry.CreateIndex = serviceNode.CreateIndex
 		entry.ModifyIndex = serviceNode.ModifyIndex
+		entry.LastModifyTime = serviceNode.LastModifyTime
 		if entry.IsSame(serviceNode) {
 			modified = false
 		} else {
 			entry.ModifyIndex = idx
+			entry.LastModifyTime = s.clock()
 		}
 	} else {
 		entry.CreateIndex = idx
 		entry.ModifyIndex = idx
+		entry.LastModifyTime = s.clock()
 	}
 
 	// Get the node
@@ -1253,9 +1259,11 @@ func (s *Store) ensureCheckTxn(tx *memdb.Txn, idx uint64, hc *structs.HealthChec
 		existingCheck := existing.(*structs.HealthCheck)
 		hc.CreateIndex = existingCheck.CreateIndex
 		hc.ModifyIndex = existingCheck.ModifyIndex
+		hc.LastModifyTime = existingCheck.LastModifyTime
 	} else {
 		hc.CreateIndex = idx
 		hc.ModifyIndex = idx
+		hc.LastModifyTime = s.clock()
 	}
 
 	// Use the default check status if none was provided
@@ -1330,11 +1338,12 @@ func (s *Store) ensureCheckTxn(tx *memdb.Txn, idx uint64, hc *structs.HealthChec
 		}
 	}
 	if modified {
-		// We update the modify index, ONLY if something has changed, thus
+		// We update the modify index and last modify time, ONLY if something has changed, thus
 		// With constant output, no change is seen when watching a service
 		// With huge number of nodes where anti-entropy updates continuously
 		// the checks, but not the values within the check
 		hc.ModifyIndex = idx
+		hc.LastModifyTime = s.clock()
 	}
 
 	// Persist the check registration in the db.

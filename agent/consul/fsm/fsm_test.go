@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/raft"
@@ -39,7 +40,7 @@ func makeLog(buf []byte) *raft.Log {
 
 func TestFSM_IgnoreUnknown(t *testing.T) {
 	t.Parallel()
-	fsm, err := New(nil, os.Stderr)
+	fsm, err := New(nil, os.Stderr, time.Now)
 	assert.Nil(t, err)
 
 	// Create a new reap request

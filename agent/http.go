@@ -9,6 +9,7 @@ import (
 	"net/http/pprof"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -410,7 +411,31 @@ func decodeBody(req *http.Request, out interface{}, cb func(interface{}) error) 
 			return err
 		}
 	}
-	return mapstructure.Decode(raw, out)
+
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			func(
+				f reflect.Type,
+				t reflect.Type,
+				data interface{}) (interface{}, error) {
+				if f.Kind() != reflect.String {
+					return data, nil
+				}
+				if t != reflect.TypeOf(time.Time{}) {
+					return data, nil
+				}
+
+				// Convert it by parsing
+				return time.Parse(time.RFC3339Nano, data.(string))
+			},
+		),
+		Result: out,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return decoder.Decode(raw)
 }
 
 // setTranslateAddr is used to set the address translation header. This is only

@@ -28,8 +28,7 @@ import (
 
 func TestAgentAntiEntropy_Services(t *testing.T) {
 	t.Parallel()
-	a := &agent.TestAgent{Name: t.Name()}
-	a.Start()
+	a := agent.NewTestAgent(t.Name(), "")
 	defer a.Shutdown()
 	testrpc.WaitForTestAgent(t, a.RPC, "dc1")
 
@@ -51,6 +50,7 @@ func TestAgentAntiEntropy_Services(t *testing.T) {
 			Passing: 1,
 			Warning: 1,
 		},
+		LastModifyTime: a.Now,
 	}
 	a.State.AddService(srv1, "")
 	args.Service = srv1
@@ -68,6 +68,7 @@ func TestAgentAntiEntropy_Services(t *testing.T) {
 			Passing: 1,
 			Warning: 0,
 		},
+		LastModifyTime: a.Now,
 	}
 	a.State.AddService(srv2, "")
 
@@ -89,6 +90,7 @@ func TestAgentAntiEntropy_Services(t *testing.T) {
 			Passing: 1,
 			Warning: 1,
 		},
+		LastModifyTime: a.Now,
 	}
 	a.State.AddService(srv3, "")
 
@@ -102,6 +104,7 @@ func TestAgentAntiEntropy_Services(t *testing.T) {
 			Passing: 1,
 			Warning: 0,
 		},
+		LastModifyTime: a.Now,
 	}
 	args.Service = srv4
 	if err := a.RPC("Catalog.Register", args, &out); err != nil {
@@ -119,6 +122,7 @@ func TestAgentAntiEntropy_Services(t *testing.T) {
 			Passing: 1,
 			Warning: 1,
 		},
+		LastModifyTime: a.Now,
 	}
 	a.State.AddService(srv5, "")
 
@@ -140,6 +144,7 @@ func TestAgentAntiEntropy_Services(t *testing.T) {
 			Passing: 1,
 			Warning: 0,
 		},
+		LastModifyTime: a.Now,
 	}
 	a.State.SetServiceState(&local.ServiceState{
 		Service: srv6,

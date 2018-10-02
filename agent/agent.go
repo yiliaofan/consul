@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/consul/agent/consul/state"
+
 	"github.com/armon/go-metrics"
 	"github.com/hashicorp/consul/acl"
 	"github.com/hashicorp/consul/agent/ae"
@@ -215,6 +217,9 @@ type Agent struct {
 
 	// proxyLock protects proxy information in the local state from concurrent modification
 	proxyLock sync.Mutex
+
+	// Clock is the time source for timestamping catalog entities
+	clock state.Clock
 }
 
 func New(c *config.RuntimeConfig) (*Agent, error) {
@@ -248,6 +253,7 @@ func New(c *config.RuntimeConfig) (*Agent, error) {
 		shutdownCh:      make(chan struct{}),
 		endpoints:       make(map[string]string),
 		tokens:          new(token.Store),
+		clock:           time.Now,
 	}
 
 	// Set up the initial state of the token store based on the config.
@@ -1003,6 +1009,8 @@ func (a *Agent) consulConfig() (*consul.Config, error) {
 	if err := a.setupKeyrings(base); err != nil {
 		return nil, fmt.Errorf("Failed to configure keyring: %v", err)
 	}
+
+	base.Clock = a.clock
 
 	return base, nil
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/agent/consul/autopilot"
+	"github.com/hashicorp/consul/agent/consul/state"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/lib"
 	"github.com/hashicorp/consul/tlsutil"
@@ -355,6 +356,9 @@ type Config struct {
 	// CAConfig is used to apply the initial Connect CA configuration when
 	// bootstrapping.
 	CAConfig *structs.CAConfiguration
+
+	// Clock is the time source for timestamping catalog entities
+	Clock state.Clock
 }
 
 // CheckProtocolVersion validates the protocol version.
@@ -444,6 +448,7 @@ func DefaultConfig() *Config {
 
 		ServerHealthInterval: 2 * time.Second,
 		AutopilotInterval:    10 * time.Second,
+		Clock:                time.Now,
 	}
 
 	// Increase our reap interval to 3 days instead of 24h.
