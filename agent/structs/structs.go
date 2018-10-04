@@ -726,7 +726,8 @@ type HealthCheck struct {
 
 	RaftIndex
 
-	LastModifyTime time.Time
+	LastModifyTime       time.Time
+	LastStatusModifyTime time.Time
 }
 
 type HealthCheckDefinition struct {

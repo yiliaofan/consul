@@ -245,12 +245,13 @@ func TestStateStore_EnsureRegistration(t *testing.T) {
 	verifyCheck := func() {
 		checks := structs.HealthChecks{
 			&structs.HealthCheck{
-				Node:           "node1",
-				CheckID:        "check1",
-				Name:           "check",
-				Status:         "critical",
-				RaftIndex:      structs.RaftIndex{CreateIndex: 3, ModifyIndex: 3},
-				LastModifyTime: ClockTime,
+				Node:                 "node1",
+				CheckID:              "check1",
+				Name:                 "check",
+				Status:               "critical",
+				RaftIndex:            structs.RaftIndex{CreateIndex: 3, ModifyIndex: 3},
+				LastModifyTime:       ClockTime,
+				LastStatusModifyTime: ClockTime,
 			},
 		}
 
@@ -294,23 +295,25 @@ func TestStateStore_EnsureRegistration(t *testing.T) {
 	verifyChecks := func() {
 		checks := structs.HealthChecks{
 			&structs.HealthCheck{
-				Node:           "node1",
-				CheckID:        "check1",
-				Name:           "check",
-				Status:         "critical",
-				RaftIndex:      structs.RaftIndex{CreateIndex: 3, ModifyIndex: 3},
-				LastModifyTime: ClockTime,
+				Node:                 "node1",
+				CheckID:              "check1",
+				Name:                 "check",
+				Status:               "critical",
+				RaftIndex:            structs.RaftIndex{CreateIndex: 3, ModifyIndex: 3},
+				LastModifyTime:       ClockTime,
+				LastStatusModifyTime: ClockTime,
 			},
 			&structs.HealthCheck{
-				Node:           "node1",
-				CheckID:        "check2",
-				Name:           "check",
-				Status:         "critical",
-				ServiceID:      "redis1",
-				ServiceName:    "redis",
-				ServiceTags:    []string{"master"},
-				RaftIndex:      structs.RaftIndex{CreateIndex: 4, ModifyIndex: 4},
-				LastModifyTime: ClockTime,
+				Node:                 "node1",
+				CheckID:              "check2",
+				Name:                 "check",
+				Status:               "critical",
+				ServiceID:            "redis1",
+				ServiceName:          "redis",
+				ServiceTags:          []string{"master"},
+				RaftIndex:            structs.RaftIndex{CreateIndex: 4, ModifyIndex: 4},
+				LastModifyTime:       ClockTime,
+				LastStatusModifyTime: ClockTime,
 			},
 		}
 
@@ -2208,6 +2211,7 @@ func TestStateStore_EnsureCheck(t *testing.T) {
 		return now
 	})
 	t1, t2, t3 := ClockTime.Add(24*time.Hour), ClockTime.Add(48*time.Hour), ClockTime.Add(72*time.Hour)
+	t4 := ClockTime.Add(96 * time.Hour)
 	now = t1
 
 	// Create a check associated with the node
@@ -2219,9 +2223,9 @@ func TestStateStore_EnsureCheck(t *testing.T) {
 		Notes:       "test check",
 		Output:      "aaa",
 		ServiceID:   "service1",
-		ServiceName: "redis",
+		ServiceName: "service1",
 	}
-	expected := check
+	expected := check.Clone()
 
 	// Creating a check without a node returns error
 	if err := s.EnsureCheck(1, check); err != ErrMissingNode {
@@ -2257,11 +2261,13 @@ func TestStateStore_EnsureCheck(t *testing.T) {
 	}
 
 	expected.LastModifyTime = t1
+	expected.LastStatusModifyTime = t1
+	expected.RaftIndex = structs.RaftIndex{CreateIndex: 3, ModifyIndex: 3}
 	if !reflect.DeepEqual(checks[0], expected) {
-		t.Fatalf("bad: %#v", checks[0])
+		t.Fatalf("bad: %+v, expected %+v", checks[0], expected)
 	}
 
-	testCheckOutput := func(expectedNodeIndex, expectedIndexForCheck uint64, lastModified time.Time, outputTxt string) {
+	testCheckOutput := func(expectedNodeIndex, expectedIndexForCheck uint64, lastModified, lastStatusModified time.Time, outputTxt string) {
 		// Check that we successfully updated
 		idx, checks, err = s.NodeChecks(nil, "node1")
 		if err != nil {
@@ -2283,6 +2289,9 @@ func TestStateStore_EnsureCheck(t *testing.T) {
 		if checks[0].LastModifyTime != lastModified {
 			t.Fatalf("bad last modify time: %s, expected %s", checks[0].LastModifyTime, lastModified)
 		}
+		if checks[0].LastStatusModifyTime != lastStatusModified {
+			t.Fatalf("bad last status modify time: %s, expected %s", checks[0].LastStatusModifyTime, lastStatusModified)
+		}
 	}
 	// Do not really modify the health check content
 	check = &structs.HealthCheck{
@@ -2302,7 +2311,7 @@ func TestStateStore_EnsureCheck(t *testing.T) {
 		t.Fatalf("err: %s", err)
 	}
 	// Modify index and modify time shoud not change
-	testCheckOutput(4, 3, t1, check.Output)
+	testCheckOutput(4, 3, t1, t1, check.Output)
 
 	// Do modify the heathcheck
 	check = &structs.HealthCheck{
@@ -2322,12 +2331,32 @@ func TestStateStore_EnsureCheck(t *testing.T) {
 		t.Fatalf("err: %s", err)
 	}
 	// Modify index and modify time should have been updated
-	testCheckOutput(5, 5, t3, "bbbmodified")
+	testCheckOutput(5, 5, t3, t1, "bbbmodified")
 
 	// Index tables were updated
 	if idx := s.maxIndex("checks"); idx != 5 {
 		t.Fatalf("bad index: %d", idx)
 	}
+
+	// Modify the check status
+	check = &structs.HealthCheck{
+		Node:        "node1",
+		CheckID:     "check1",
+		Name:        "redis check",
+		Status:      api.HealthCritical,
+		Notes:       "test check",
+		Output:      "bbbmodified",
+		ServiceID:   "service1",
+		ServiceName: "redis",
+	}
+
+	now = t4
+
+	if err := s.EnsureCheck(6, check); err != nil {
+		t.Fatalf("err: %s", err)
+	}
+	// Modify index and modify time should have been updated
+	testCheckOutput(6, 6, t4, t4, "bbbmodified")
 }
 
 func TestStateStore_EnsureCheck_defaultStatus(t *testing.T) {
@@ -3367,7 +3396,8 @@ func TestStateStore_NodeInfo_NodeDump(t *testing.T) {
 						CreateIndex: 6,
 						ModifyIndex: 6,
 					},
-					LastModifyTime: ClockTime,
+					LastModifyTime:       ClockTime,
+					LastStatusModifyTime: ClockTime,
 				},
 				&structs.HealthCheck{
 					Node:        "node1",
@@ -3379,7 +3409,8 @@ func TestStateStore_NodeInfo_NodeDump(t *testing.T) {
 						CreateIndex: 8,
 						ModifyIndex: 8,
 					},
-					LastModifyTime: ClockTime,
+					LastModifyTime:       ClockTime,
+					LastStatusModifyTime: ClockTime,
 				},
 			},
 			Services: []*structs.NodeService{
@@ -3424,7 +3455,8 @@ func TestStateStore_NodeInfo_NodeDump(t *testing.T) {
 						CreateIndex: 7,
 						ModifyIndex: 7,
 					},
-					LastModifyTime: ClockTime,
+					LastModifyTime:       ClockTime,
+					LastStatusModifyTime: ClockTime,
 				},
 				&structs.HealthCheck{
 					Node:        "node2",
@@ -3436,7 +3468,8 @@ func TestStateStore_NodeInfo_NodeDump(t *testing.T) {
 						CreateIndex: 9,
 						ModifyIndex: 9,
 					},
-					LastModifyTime: ClockTime,
+					LastModifyTime:       ClockTime,
+					LastStatusModifyTime: ClockTime,
 				},
 			},
 			Services: []*structs.NodeService{

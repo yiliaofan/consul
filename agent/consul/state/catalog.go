@@ -1260,10 +1260,12 @@ func (s *Store) ensureCheckTxn(tx *memdb.Txn, idx uint64, hc *structs.HealthChec
 		hc.CreateIndex = existingCheck.CreateIndex
 		hc.ModifyIndex = existingCheck.ModifyIndex
 		hc.LastModifyTime = existingCheck.LastModifyTime
+		hc.LastStatusModifyTime = existingCheck.LastStatusModifyTime
 	} else {
 		hc.CreateIndex = idx
 		hc.ModifyIndex = idx
 		hc.LastModifyTime = s.clock()
+		hc.LastStatusModifyTime = s.clock()
 	}
 
 	// Use the default check status if none was provided
@@ -1344,6 +1346,11 @@ func (s *Store) ensureCheckTxn(tx *memdb.Txn, idx uint64, hc *structs.HealthChec
 		// the checks, but not the values within the check
 		hc.ModifyIndex = idx
 		hc.LastModifyTime = s.clock()
+
+		// if the status has changed, set LastStatusChange accordingly
+		if existing != nil && existing.(*structs.HealthCheck).Status != hc.Status {
+			hc.LastStatusModifyTime = s.clock()
+		}
 	}
 
 	// Persist the check registration in the db.
