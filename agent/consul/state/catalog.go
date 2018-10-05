@@ -437,11 +437,11 @@ func (s *Store) ensureNodeTxn(tx *memdb.Txn, idx uint64, node *structs.Node) err
 			return nil
 		}
 		node.ModifyIndex = idx
-		node.LastModifyTime = s.clock()
+		node.LastModifyTime = s.clock().UTC()
 	} else {
 		node.CreateIndex = idx
 		node.ModifyIndex = idx
-		node.LastModifyTime = s.clock()
+		node.LastModifyTime = s.clock().UTC()
 	}
 
 	// Insert the node and update the index.
@@ -705,12 +705,12 @@ func (s *Store) ensureServiceTxn(tx *memdb.Txn, idx uint64, node string, svc *st
 			modified = false
 		} else {
 			entry.ModifyIndex = idx
-			entry.LastModifyTime = s.clock()
+			entry.LastModifyTime = s.clock().UTC()
 		}
 	} else {
 		entry.CreateIndex = idx
 		entry.ModifyIndex = idx
-		entry.LastModifyTime = s.clock()
+		entry.LastModifyTime = s.clock().UTC()
 	}
 
 	// Get the node
@@ -1264,8 +1264,8 @@ func (s *Store) ensureCheckTxn(tx *memdb.Txn, idx uint64, hc *structs.HealthChec
 	} else {
 		hc.CreateIndex = idx
 		hc.ModifyIndex = idx
-		hc.LastModifyTime = s.clock()
-		hc.LastStatusModifyTime = s.clock()
+		hc.LastModifyTime = s.clock().UTC()
+		hc.LastStatusModifyTime = s.clock().UTC()
 	}
 
 	// Use the default check status if none was provided
@@ -1345,11 +1345,11 @@ func (s *Store) ensureCheckTxn(tx *memdb.Txn, idx uint64, hc *structs.HealthChec
 		// With huge number of nodes where anti-entropy updates continuously
 		// the checks, but not the values within the check
 		hc.ModifyIndex = idx
-		hc.LastModifyTime = s.clock()
+		hc.LastModifyTime = s.clock().UTC()
 
 		// if the status has changed, set LastStatusChange accordingly
 		if existing != nil && existing.(*structs.HealthCheck).Status != hc.Status {
-			hc.LastStatusModifyTime = s.clock()
+			hc.LastStatusModifyTime = s.clock().UTC()
 		}
 	}
 
