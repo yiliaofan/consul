@@ -349,7 +349,8 @@ func TestConfigFlagsAndEdgecases(t *testing.T) {
 				`-data-dir=` + dataDir,
 			},
 			patch: func(rt *RuntimeConfig) {
-				rt.EnableScriptChecks = true
+				rt.EnableLocalScriptChecks = true
+				rt.EnableRemoteScriptChecks = true
 				rt.DataDir = dataDir
 			},
 		},
@@ -3781,7 +3782,7 @@ func TestFullConfig(t *testing.T) {
 		EnableACLReplication:             true,
 		EnableAgentTLSForChecks:          true,
 		EnableDebug:                      true,
-		EnableScriptChecks:               true,
+		EnableRemoteScriptChecks:         true,
 		EnableLocalScriptChecks:          true,
 		EnableSyslog:                     true,
 		EnableUI:                         true,
@@ -4520,8 +4521,8 @@ func TestSanitize(t *testing.T) {
 		"EnableACLReplication": false,
 		"EnableAgentTLSForChecks": false,
 		"EnableDebug": false,
-		"EnableScriptChecks": false,
 		"EnableLocalScriptChecks": false,
+		"EnableRemoteScriptChecks": false,
 		"EnableSyslog": false,
 		"EnableUI": false,
 		"EncryptKey": "hidden",

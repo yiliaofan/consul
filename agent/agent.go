@@ -1864,12 +1864,12 @@ func (a *Agent) AddCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 		}
 
 		if chkType.IsScript() {
-			if source == ConfigSourceLocal && !a.config.EnableScriptChecks && !a.config.EnableLocalScriptChecks {
+			if source == ConfigSourceLocal && !a.config.EnableLocalScriptChecks {
 				return fmt.Errorf("Scripts are disabled on this agent; to enable, configure 'enable_script_checks' or 'enable_local_script_checks' to true")
 			}
 
-			if source == ConfigSourceRemote && !a.config.EnableScriptChecks {
-				return fmt.Errorf("Scripts are disabled on this agent from remote calls; to enable, configure 'enable_script_checks' or 'enable_remote_script_checks' to true")
+			if source == ConfigSourceRemote && !a.config.EnableRemoteScriptChecks {
+				return fmt.Errorf("Scripts are disabled on this agent from remote calls; to enable, configure 'enable_script_checks' to true")
 			}
 		}
 	}
