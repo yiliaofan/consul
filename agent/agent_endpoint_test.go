@@ -191,7 +191,7 @@ func TestAgent_Checks(t *testing.T) {
 	}
 }
 
-func TestAgent_Health_Service_Id(t *testing.T) {
+func TestAgent_HealthServiceByID(t *testing.T) {
 	t.Parallel()
 	a := NewTestAgent(t.Name(), "")
 	defer a.Shutdown()
@@ -292,36 +292,47 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 	}
 
 	eval := func(t *testing.T, url string, expectedCode int, expected string) {
+		t.Helper()
 		t.Run("format=text", func(t *testing.T) {
+			t.Helper()
 			req, _ := http.NewRequest("GET", url+"?format=text", nil)
 			resp := httptest.NewRecorder()
-			_, err := a.srv.AgentHealthServiceId(resp, req)
-			if err != nil {
+			data, err := a.srv.AgentHealthServiceByID(resp, req)
+			codeWithPayload, ok := err.(api.CodeWithPayloadError)
+			if !ok {
 				t.Fatalf("Err: %v", err)
 			}
-			if got, want := resp.Code, expectedCode; got != want {
-				t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
+			if got, want := codeWithPayload.StatusCode, expectedCode; got != want {
+				t.Fatalf("returned bad status: expected %d, but had: %d in %#v", expectedCode, codeWithPayload.StatusCode, codeWithPayload)
 			}
-			if got, want := resp.Body.String(), expected; got != want {
+			body, ok := data.(string)
+			if !ok {
+				t.Fatalf("Cannot get result as string in := %#v", data)
+			}
+			if got, want := body, expected; got != want {
+				t.Fatalf("got body %q want %q", got, want)
+			}
+			if got, want := codeWithPayload.Reason, expected; got != want {
 				t.Fatalf("got body %q want %q", got, want)
 			}
 		})
 		t.Run("format=json", func(t *testing.T) {
 			req, _ := http.NewRequest("GET", url, nil)
 			resp := httptest.NewRecorder()
-			dataRaw, err := a.srv.AgentHealthServiceId(resp, req)
-			if err != nil {
+			dataRaw, err := a.srv.AgentHealthServiceByID(resp, req)
+			codeWithPayload, ok := err.(api.CodeWithPayloadError)
+			if !ok {
 				t.Fatalf("Err: %v", err)
 			}
-			data, ok := dataRaw.(map[string]*structs.NodeService)
+			if got, want := codeWithPayload.StatusCode, expectedCode; got != want {
+				t.Fatalf("returned bad status: expected %d, but had: %d in %#v", expectedCode, codeWithPayload.StatusCode, codeWithPayload)
+			}
+			data, ok := dataRaw.(*api.AgentServiceChecksInfo)
 			if !ok {
-				t.Fatalf("Cannot connvert result to JSON")
+				t.Fatalf("Cannot connvert result to JSON: %#v", dataRaw)
 			}
-			if got, want := resp.Code, expectedCode; got != want {
-				t.Fatalf("returned bad status: %d. Body: %#v", resp.Code, data)
-			}
-			if resp.Code != http.StatusNotFound {
-				if _, ok := data[expected]; !ok {
+			if codeWithPayload.StatusCode != http.StatusNotFound {
+				if data != nil && data.AggregatedStatus != expected {
 					t.Fatalf("got body %v want %v", data, expected)
 				}
 			}
@@ -329,16 +340,16 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 	}
 
 	t.Run("passing checks", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/id/mysql", 200, "passing")
+		eval(t, "/v1/agent/health/service/id/mysql", http.StatusOK, "passing")
 	})
 	t.Run("warning checks", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/id/mysql2", 429, "warning")
+		eval(t, "/v1/agent/health/service/id/mysql2", http.StatusTooManyRequests, "warning")
 	})
 	t.Run("critical checks", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/id/mysql3", 503, "critical")
+		eval(t, "/v1/agent/health/service/id/mysql3", http.StatusServiceUnavailable, "critical")
 	})
 	t.Run("unknown serviceid", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/id/mysql1", 404, "ServiceId mysql1 not found")
+		eval(t, "/v1/agent/health/service/id/mysql1", http.StatusNotFound, "ServiceId mysql1 not found")
 	})
 
 	nodeCheck := &structs.HealthCheck{
@@ -353,7 +364,7 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("critical check on node", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/id/mysql", 503, "critical")
+		eval(t, "/v1/agent/health/service/id/mysql", http.StatusServiceUnavailable, "critical")
 	})
 
 	err = a.State.RemoveCheck(nodeCheck.CheckID)
@@ -371,11 +382,11 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("maintenance check on node", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/id/mysql", 503, "maintenance")
+		eval(t, "/v1/agent/health/service/id/mysql", http.StatusServiceUnavailable, "maintenance")
 	})
 }
 
-func TestAgent_Health_Service_Name(t *testing.T) {
+func TestAgent_HealthServiceByName(t *testing.T) {
 	t.Parallel()
 	a := NewTestAgent(t.Name(), "")
 	defer a.Shutdown()
@@ -528,53 +539,61 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 	}
 
 	eval := func(t *testing.T, url string, expectedCode int, expected string) {
+		t.Helper()
 		t.Run("format=text", func(t *testing.T) {
+			t.Helper()
 			req, _ := http.NewRequest("GET", url+"?format=text", nil)
 			resp := httptest.NewRecorder()
-			_, err := a.srv.AgentHealthServiceName(resp, req)
-			if err != nil {
+			data, err := a.srv.AgentHealthServiceByName(resp, req)
+			codeWithPayload, ok := err.(api.CodeWithPayloadError)
+			if !ok {
 				t.Fatalf("Err: %v", err)
 			}
-			if got, want := resp.Code, expectedCode; got != want {
+			if got, want := codeWithPayload.StatusCode, expectedCode; got != want {
 				t.Fatalf("returned bad status: %d. Body: %q", resp.Code, resp.Body.String())
 			}
-			if got, want := resp.Body.String(), expected; got != want {
+			if got, want := codeWithPayload.Reason, expected; got != want {
+				t.Fatalf("got reason %q want %q", got, want)
+			}
+			if got, want := data, expected; got != want {
 				t.Fatalf("got body %q want %q", got, want)
 			}
 		})
 		t.Run("format=json", func(t *testing.T) {
+			t.Helper()
 			req, _ := http.NewRequest("GET", url, nil)
 			resp := httptest.NewRecorder()
-			dataRaw, err := a.srv.AgentHealthServiceName(resp, req)
-			if err != nil {
+			dataRaw, err := a.srv.AgentHealthServiceByName(resp, req)
+			codeWithPayload, ok := err.(api.CodeWithPayloadError)
+			if !ok {
 				t.Fatalf("Err: %v", err)
 			}
-			data, ok := dataRaw.(map[string][]*structs.NodeService)
+			data, ok := dataRaw.([]api.AgentServiceChecksInfo)
 			if !ok {
 				t.Fatalf("Cannot connvert result to JSON")
 			}
-			if got, want := resp.Code, expectedCode; got != want {
-				t.Fatalf("returned bad status: %d. Body: %#v", resp.Code, data)
+			if got, want := codeWithPayload.StatusCode, expectedCode; got != want {
+				t.Fatalf("returned bad code: %d. Body: %#v", resp.Code, data)
 			}
 			if resp.Code != http.StatusNotFound {
-				if _, ok := data[expected]; !ok {
-					t.Fatalf("got body %v want %v", data, expected)
+				if codeWithPayload.Reason != expected {
+					t.Fatalf("got wrong status %#v want %#v", codeWithPayload, expected)
 				}
 			}
 		})
 	}
 
 	t.Run("passing checks", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/name/httpd", 200, "passing")
+		eval(t, "/v1/agent/health/service/name/httpd", http.StatusOK, "passing")
 	})
 	t.Run("warning checks", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/name/mysql-pool-rw", 429, "warning")
+		eval(t, "/v1/agent/health/service/name/mysql-pool-rw", http.StatusTooManyRequests, "warning")
 	})
 	t.Run("critical checks", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/name/mysql-pool-r", 503, "critical")
+		eval(t, "/v1/agent/health/service/name/mysql-pool-r", http.StatusServiceUnavailable, "critical")
 	})
 	t.Run("unknown serviceName", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/name/test", 404, "ServiceName test Not Found")
+		eval(t, "/v1/agent/health/service/name/test", http.StatusNotFound, "ServiceName test Not Found")
 	})
 	nodeCheck := &structs.HealthCheck{
 		Node:    a.Config.NodeName,
@@ -588,7 +607,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("critical check on node", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/name/mysql-pool-r", 503, "critical")
+		eval(t, "/v1/agent/health/service/name/mysql-pool-r", http.StatusServiceUnavailable, "critical")
 	})
 
 	err = a.State.RemoveCheck(nodeCheck.CheckID)
@@ -606,7 +625,7 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	t.Run("maintenance check on node", func(t *testing.T) {
-		eval(t, "/v1/agent/health/service/name/mysql-pool-r", 503, "maintenance")
+		eval(t, "/v1/agent/health/service/name/mysql-pool-r", http.StatusServiceUnavailable, "maintenance")
 	})
 }
 
@@ -3804,7 +3823,7 @@ func TestAgentConnectProxyConfig_ConfigHandling(t *testing.T) {
 			TTL: 15 * time.Second,
 		},
 		Connect: &structs.ServiceConnect{
-		// Proxy is populated with the definition in the table below.
+			// Proxy is populated with the definition in the table below.
 		},
 	}
 

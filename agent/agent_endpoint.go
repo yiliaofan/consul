@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/consul/agent/checks"
 	"github.com/hashicorp/consul/agent/config"
 	"github.com/hashicorp/consul/agent/connect"
+	"github.com/hashicorp/consul/agent/local"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/ipaddr"
@@ -152,6 +153,47 @@ func (s *HTTPServer) AgentReload(resp http.ResponseWriter, req *http.Request) (i
 	}
 }
 
+func buildAgentService(s *structs.NodeService, proxies map[string]*local.ManagedProxy) api.AgentService {
+	weights := api.AgentWeights{Passing: 1, Warning: 1}
+	if s.Weights != nil {
+		if s.Weights.Passing > 0 {
+			weights.Passing = s.Weights.Passing
+		}
+		weights.Warning = s.Weights.Warning
+	}
+	as := api.AgentService{
+		Kind:              api.ServiceKind(s.Kind),
+		ID:                s.ID,
+		Service:           s.Service,
+		Tags:              s.Tags,
+		Meta:              s.Meta,
+		Port:              s.Port,
+		Address:           s.Address,
+		EnableTagOverride: s.EnableTagOverride,
+		CreateIndex:       s.CreateIndex,
+		ModifyIndex:       s.ModifyIndex,
+		ProxyDestination:  s.ProxyDestination,
+		Weights:           weights,
+	}
+	if as.Tags == nil {
+		as.Tags = []string{}
+	}
+	if as.Meta == nil {
+		as.Meta = map[string]string{}
+	}
+	// Attach Connect configs if the exist
+	if proxy, ok := proxies[s.ID+"-proxy"]; ok {
+		as.Connect = &api.AgentServiceConnect{
+			Proxy: &api.AgentServiceConnectProxy{
+				ExecMode: api.ProxyExecMode(proxy.Proxy.ExecMode.String()),
+				Command:  proxy.Proxy.Command,
+				Config:   proxy.Proxy.Config,
+			},
+		}
+	}
+	return as
+}
+
 func (s *HTTPServer) AgentServices(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	// Fetch the ACL token, if any.
 	var token string
@@ -172,44 +214,8 @@ func (s *HTTPServer) AgentServices(resp http.ResponseWriter, req *http.Request) 
 
 	// Use empty list instead of nil
 	for id, s := range services {
-		weights := api.AgentWeights{Passing: 1, Warning: 1}
-		if s.Weights != nil {
-			if s.Weights.Passing > 0 {
-				weights.Passing = s.Weights.Passing
-			}
-			weights.Warning = s.Weights.Warning
-		}
-		as := &api.AgentService{
-			Kind:              api.ServiceKind(s.Kind),
-			ID:                s.ID,
-			Service:           s.Service,
-			Tags:              s.Tags,
-			Meta:              s.Meta,
-			Port:              s.Port,
-			Address:           s.Address,
-			EnableTagOverride: s.EnableTagOverride,
-			CreateIndex:       s.CreateIndex,
-			ModifyIndex:       s.ModifyIndex,
-			ProxyDestination:  s.ProxyDestination,
-			Weights:           weights,
-		}
-		if as.Tags == nil {
-			as.Tags = []string{}
-		}
-		if as.Meta == nil {
-			as.Meta = map[string]string{}
-		}
-		// Attach Connect configs if the exist
-		if proxy, ok := proxies[id+"-proxy"]; ok {
-			as.Connect = &api.AgentServiceConnect{
-				Proxy: &api.AgentServiceConnectProxy{
-					ExecMode: api.ProxyExecMode(proxy.Proxy.ExecMode.String()),
-					Command:  proxy.Proxy.Command,
-					Config:   proxy.Proxy.Config,
-				},
-			}
-		}
-		agentSvcs[id] = as
+		agentService := buildAgentService(s, proxies)
+		agentSvcs[id] = &agentService
 	}
 
 	return agentSvcs, nil
@@ -531,11 +537,12 @@ func (s *HTTPServer) AgentCheckUpdate(resp http.ResponseWriter, req *http.Reques
 	return nil, nil
 }
 
-func AgentHealthService(serviceId string, s *HTTPServer) (int, string) {
+// agentHealthService Returns Health for a given service ID
+func agentHealthService(serviceID string, s *HTTPServer) (int, string, api.HealthChecks) {
 	checks := s.agent.State.Checks()
 	serviceChecks := make(api.HealthChecks, 0)
 	for _, c := range checks {
-		if c.ServiceID == serviceId || c.ServiceID == "" {
+		if c.ServiceID == serviceID || c.ServiceID == "" {
 			// TODO: harmonize struct.HealthCheck and api.HealthCheck (or at least extract conversion function)
 			healthCheck := &api.HealthCheck{
 				Node:        c.Node,
@@ -554,11 +561,11 @@ func AgentHealthService(serviceId string, s *HTTPServer) (int, string) {
 	status := serviceChecks.AggregatedStatus()
 	switch status {
 	case api.HealthWarning:
-		return http.StatusTooManyRequests, status
+		return http.StatusTooManyRequests, status, serviceChecks
 	case api.HealthPassing:
-		return http.StatusOK, status
+		return http.StatusOK, status, serviceChecks
 	default:
-		return http.StatusServiceUnavailable, status
+		return http.StatusServiceUnavailable, status, serviceChecks
 	}
 }
 
@@ -566,75 +573,76 @@ func returnTextPlain(req *http.Request) bool {
 	if contentType := req.Header.Get("Accept"); strings.HasPrefix(contentType, "text/plain") {
 		return true
 	}
-	if format := req.URL.Query().Get("format"); format == "text" {
-		return true
+	if format := req.URL.Query().Get("format"); format != "" {
+		return format == "text"
 	}
 	return false
 }
 
-func (s *HTTPServer) AgentHealthServiceId(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+// AgentHealthServiceByID return the local Service Health given its ID
+func (s *HTTPServer) AgentHealthServiceByID(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	// Pull out the service id (service id since there may be several instance of the same service on this host)
 	serviceID := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/id/")
 	if serviceID == "" {
-		resp.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(resp, "Missing service id")
-		return nil, nil
+		return nil, &BadRequestError{Reason: "Missing serviceID"}
 	}
 	services := s.agent.State.Services()
+	proxies := s.agent.State.Proxies()
 	for _, service := range services {
 		if service.ID == serviceID {
-			code, status := AgentHealthService(serviceID, s)
+			code, status, healthChecks := agentHealthService(serviceID, s)
 			if returnTextPlain(req) {
-				resp.WriteHeader(code)
-				fmt.Fprint(resp, status)
-				return nil, nil
+				return status, api.CodeWithPayloadError{StatusCode: code, Reason: status, ContentType: "text/plain"}
 			}
-			resp.Header().Add("Content-Type", "application/json")
-			resp.WriteHeader(code)
-			result := make(map[string]*structs.NodeService)
-			result[status] = service
-			return result, nil
+			serviceInfo := buildAgentService(service, proxies)
+			result := &api.AgentServiceChecksInfo{
+				AggregatedStatus: status,
+				Checks:           healthChecks,
+				Service:          &serviceInfo,
+			}
+			return result, api.CodeWithPayloadError{StatusCode: code, Reason: status, ContentType: "application/json"}
 		}
 	}
+	notFoundReason := fmt.Sprintf("ServiceId %s not found", serviceID)
 	if returnTextPlain(req) {
-		resp.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(resp, "ServiceId %s not found", serviceID)
-		return nil, nil
+		return notFoundReason, api.CodeWithPayloadError{StatusCode: http.StatusNotFound, Reason: fmt.Sprintf("ServiceId %s not found", serviceID), ContentType: "application/json"}
 	}
-	resp.Header().Add("Content-Type", "application/json")
-	resp.WriteHeader(http.StatusNotFound)
-	result := make(map[string]*structs.NodeService)
-	return result, nil
+	return &api.AgentServiceChecksInfo{
+		AggregatedStatus: api.HealthCritical,
+		Checks:           nil,
+		Service:          nil,
+	}, api.CodeWithPayloadError{StatusCode: http.StatusNotFound, Reason: notFoundReason, ContentType: "application/json"}
 }
 
-func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
-
+// AgentHealthServiceByName return the worse status of all the services with given name on an agent
+func (s *HTTPServer) AgentHealthServiceByName(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
 	// Pull out the service name
 	serviceName := strings.TrimPrefix(req.URL.Path, "/v1/agent/health/service/name/")
 	if serviceName == "" {
-		resp.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(resp, "Missing service name")
-		return nil, nil
+		return nil, &BadRequestError{Reason: "Missing service Name"}
 	}
 	code := http.StatusNotFound
 	status := fmt.Sprintf("ServiceName %s Not Found", serviceName)
 	services := s.agent.State.Services()
-	result := make(map[string][]*structs.NodeService)
+	result := make([]api.AgentServiceChecksInfo, 0, 16)
+	proxies := s.agent.State.Proxies()
 	for _, service := range services {
 		if service.Service == serviceName {
-			scode, sstatus := AgentHealthService(service.ID, s)
-			res, ok := result[sstatus]
-			if !ok {
-				res = make([]*structs.NodeService, 0, 4)
+			scode, sstatus, healthChecks := agentHealthService(service.ID, s)
+			serviceInfo := buildAgentService(service, proxies)
+			res := api.AgentServiceChecksInfo{
+				AggregatedStatus: sstatus,
+				Checks:           healthChecks,
+				Service:          &serviceInfo,
 			}
-			result[sstatus] = append(res, service)
+			result = append(result, res)
 			// When service is not found, we ignore it and keep existing HTTP status
 			if code == http.StatusNotFound {
 				code = scode
 				status = sstatus
 			}
 			// We take the worst of all statuses, so we keep iterating
-			// passing: 200 <  < warning: 429 < critical: 503
+			// passing: 200 < warning: 429 < critical: 503
 			if code < scode {
 				code = scode
 				status = sstatus
@@ -642,13 +650,9 @@ func (s *HTTPServer) AgentHealthServiceName(resp http.ResponseWriter, req *http.
 		}
 	}
 	if returnTextPlain(req) {
-		resp.WriteHeader(code)
-		fmt.Fprint(resp, status)
-		return nil, nil
+		return status, api.CodeWithPayloadError{StatusCode: code, Reason: status, ContentType: "text/plain"}
 	}
-	resp.Header().Add("Content-Type", "application/json")
-	resp.WriteHeader(code)
-	return result, nil
+	return result, api.CodeWithPayloadError{StatusCode: code, Reason: status, ContentType: "application/json"}
 }
 
 func (s *HTTPServer) AgentRegisterService(resp http.ResponseWriter, req *http.Request) (interface{}, error) {

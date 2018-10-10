@@ -150,6 +150,7 @@ func TestAPI_AgentServices(t *testing.T) {
 
 	reg := &AgentServiceRegistration{
 		Name: "foo",
+		ID:   "foo",
 		Tags: []string{"bar", "baz"},
 		Port: 8000,
 		Check: &AgentServiceCheck{
@@ -165,7 +166,7 @@ func TestAPI_AgentServices(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 	if _, ok := services["foo"]; !ok {
-		t.Fatalf("missing service: %v", services)
+		t.Fatalf("missing service: %#v", services)
 	}
 	checks, err := agent.Checks()
 	if err != nil {
@@ -179,6 +180,18 @@ func TestAPI_AgentServices(t *testing.T) {
 	// Checks should default to critical
 	if chk.Status != HealthCritical {
 		t.Fatalf("Bad: %#v", chk)
+	}
+
+	if state, out, err := agent.AgentHealthServiceByID("foo2"); out != nil && state != HealthCritical && err != nil {
+		t.Fatalf("service should not exist, out:=%#v", out)
+	}
+
+	if state, out, err := agent.AgentHealthServiceByID("foo"); err != nil || out != nil || state != HealthCritical || out.Service.Port != 8000 {
+		t.Fatalf("expected response critical and no error, but had (%s, %#v, %v)", state, out, err)
+	}
+
+	if state, out, err := agent.AgentHealthServiceByName("foo"); out != nil && state != HealthCritical && err != nil {
+		t.Fatalf("service should not exist, out:=%#v", out)
 	}
 
 	if err := agent.ServiceDeregister("foo"); err != nil {
@@ -1156,9 +1169,9 @@ func TestAPI_AgentConnectProxyConfig(t *testing.T) {
 		ExecMode:          "daemon",
 		Command:           []string{"consul", "connect", "proxy"},
 		Config: map[string]interface{}{
-			"bind_address": "127.0.0.1",
-			"bind_port":    float64(20000),
-			"foo":          "bar",
+			"bind_address":          "127.0.0.1",
+			"bind_port":             float64(20000),
+			"foo":                   "bar",
 			"local_service_address": "127.0.0.1:8000",
 		},
 	}
