@@ -201,21 +201,21 @@ func TestAgent_Health_Service_Id(t *testing.T) {
 		ID:      "mysql",
 		Service: "mysql",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	service = &structs.NodeService{
 		ID:      "mysql2",
 		Service: "mysql2",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	service = &structs.NodeService{
 		ID:      "mysql3",
 		Service: "mysql3",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 
@@ -384,42 +384,42 @@ func TestAgent_Health_Service_Name(t *testing.T) {
 		ID:      "mysql1",
 		Service: "mysql-pool-r",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	service = &structs.NodeService{
 		ID:      "mysql2",
 		Service: "mysql-pool-r",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	service = &structs.NodeService{
 		ID:      "mysql3",
 		Service: "mysql-pool-rw",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	service = &structs.NodeService{
 		ID:      "mysql4",
 		Service: "mysql-pool-rw",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	service = &structs.NodeService{
 		ID:      "httpd1",
 		Service: "httpd",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	service = &structs.NodeService{
 		ID:      "httpd2",
 		Service: "httpd",
 	}
-	if err := a.AddService(service, nil, false, ""); err != nil {
+	if err := a.AddService(service, nil, false, "", ConfigSourceLocal); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 
