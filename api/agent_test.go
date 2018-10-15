@@ -182,17 +182,22 @@ func TestAPI_AgentServices(t *testing.T) {
 		t.Fatalf("Bad: %#v", chk)
 	}
 
-	if state, out, err := agent.AgentHealthServiceByID("foo2"); out != nil && state != HealthCritical && err != nil {
-		t.Fatalf("service should not exist, out:=%#v", out)
-	}
+	state, out, err := agent.AgentHealthServiceByID("foo2")
+	require.Nil(t, err)
+	require.Nil(t, out)
+	require.Equal(t, HealthCritical, state)
 
-	if state, out, err := agent.AgentHealthServiceByID("foo"); err != nil || out != nil || state != HealthCritical || out.Service.Port != 8000 {
-		t.Fatalf("expected response critical and no error, but had (%s, %#v, %v)", state, out, err)
-	}
+	state, out, err = agent.AgentHealthServiceByID("foo")
+	require.Nil(t, err)
+	require.NotNil(t, out)
+	require.Equal(t, HealthCritical, state)
+	require.Equal(t, 8000, out.Service.Port)
 
-	if state, out, err := agent.AgentHealthServiceByName("foo"); out != nil && state != HealthCritical && err != nil {
-		t.Fatalf("service should not exist, out:=%#v", out)
-	}
+	state, outs, err := agent.AgentHealthServiceByName("foo")
+	require.Nil(t, err)
+	require.NotNil(t, outs)
+	require.Equal(t, HealthCritical, state)
+	require.Equal(t, 8000, out.Service.Port)
 
 	if err := agent.ServiceDeregister("foo"); err != nil {
 		t.Fatalf("err: %v", err)
