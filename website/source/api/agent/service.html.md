@@ -153,35 +153,38 @@ same hash is also present in `X-Consul-ContentHash`.
 
 ## Get local service health
 
-The `/v1/agent/health/service/name/<service_name>` and
-`/v1/agent/health/service/id/<service_id>` endpoints allow retrieving an
-aggregated state of service(s) of the local agent.
+Retrieve an aggregated state of service(s) on the local agent by name.
 
-The endpoint `/v1/agent/health/service/name/<service_name>` queries all
-services with a given names (several may match), while
-`/v1/agent/health/service/id/<service_id>` will match a single service only.
-
-If you know the ID of service you want to target, it is recommended to use
-the version `/v1/agent/health/service/id/<service_id>` so you have the result
-for the service only. When requesting
-`/v1/agent/health/service/name/<service_name>`, the caller will receive the
-worst state of all services having the given name.
-
-Those endpoints support JSON format and text/plain formats, JSON being the
+This endpoints support JSON format and text/plain formats, JSON being the
 default. In order to get the text format, you can append `?format=text` to
 the URL or use Mime Content negotiation by specifying a HTTP Header
 `Accept` starting with `text/plain`.
 
-Those endpoints return the aggregated values of all healthchecks for the
-service and will return the corresponding HTTP codes:
+| Method | Path                                                      | Produces           |
+| ------ | --------------------------------------------------------- | ------------------ |
+| `GET`  | `/v1/agent/health/service/name/:service_name`             | `application/json` |
+| `GET`  | `/v1/agent/health/service/name/:service_name?format=text` | `text/plain`       |
 
-| Result | Meaning                                                |
-| ------ | ------------------------------------------------------ |
-| `200`  | All healthchecks of this service are passing           |
-| `400`  | Bad parameter (missing service name of id)             |
-| `404`  | No such service id or name                             |
-| `429`  | Some healthchecks are passing, at least one is warning |
-| `503`  | At least one of the healthchecks is critical           |
+The table below shows this endpoint's support for
+[blocking queries](/api/index.html#blocking-queries),
+[consistency modes](/api/index.html#consistency-modes),
+[agent caching](/api/index.html#agent-caching), and
+[required ACLs](/api/index.html#acls).
+
+| Blocking Queries | Consistency Modes | Agent Caching | ACL Required   |
+| ---------------- | ----------------- | ------------- | -------------- |
+| `NO`             | `none`            | `none`        | `service:read` |
+
+Those endpoints return the aggregated values of all healthchecks for the
+service instance(s) and will return the corresponding HTTP codes:
+
+| Result | Meaning                                                         |
+| ------ | ----------------------------------------------------------------|
+| `200`  | All healthchecks of every matching service instance are passing |
+| `400`  | Bad parameter (missing service name of id)                      |
+| `404`  | No such service id or name                                      |
+| `429`  | Some healthchecks are passing, at least one is warning          |
+| `503`  | At least one of the healthchecks is critical                    |
 
 Those endpoints might be usefull for the following use-cases:
 
@@ -189,6 +192,14 @@ Those endpoints might be usefull for the following use-cases:
   the aggregated status of given service
 * create aliases for a given service (thus, the healthcheck of alias uses
   http://localhost:8500/v1/agent/service/id/aliased_service_id healthcheck)
+
+
+##### Note
+If you know the ID of service you want to target, it is recommended to use
+[`/v1/agent/health/service/id/:service_id`](/api/service.html#get-local-service-health-by-id)
+so you have the result for the service only. When requesting
+`/v1/agent/health/service/name/:service_name`, the caller will receive the
+worst state of all services having the given name.
 
 ### Sample Requests
 
@@ -335,9 +346,20 @@ curl localhost:8500/v1/agent/health/service/id/web1
     }
 }
 ```
-=======
 
->>>>>>> origin
+## Get local service health by its ID
+
+Retrive an aggregated state of service(s) on the local agent by ID.
+
+See:
+
+| Method | Path                                                   | Produces           |
+| ------ | ------------------------------------------------------ | ------------------ |
+| `GET`  | `/v1/agent/health/service/id/:service_id`             | `application/json` |
+| `GET`  | `/v1/agent/health/service/id/:service_id?format=text` | `text/plain`       |
+
+Parameters and response format are the same as
+[`/v1/agent/health/service/name/:service_name`](/api/service.html#get-local-service-health).
 
 ## Register Service
 
@@ -404,8 +426,8 @@ service definition keys for compatibility with the config file format.
   Connect proxy instance. This is only valid if `Kind == "connect-proxy"`. See
   the [Proxy documentation](/docs/connect/proxies.html) for full details.
 
-- `Connect` `(Connect: nil)` - Specifies the 
-  [configuration for Connect](/docs/connect/configuration.html). See the 
+- `Connect` `(Connect: nil)` - Specifies the
+  [configuration for Connect](/docs/connect/configuration.html). See the
   [Connect Structure](#connect-structure) section below for supported fields.
 
 - `Check` `(Check: nil)` - Specifies a check. Please see the
