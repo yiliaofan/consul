@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/consul/agent/checks"
 	"github.com/hashicorp/consul/agent/config"
 	"github.com/hashicorp/consul/agent/connect"
+	"github.com/hashicorp/consul/agent/debug"
 	"github.com/hashicorp/consul/agent/local"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/api"
@@ -175,7 +176,7 @@ func TestAgent_Services_Sidecar(t *testing.T) {
 	assert.Equal(srv1.Proxy.DestinationServiceName, actual.ProxyDestination)
 
 	// Sanity check that LocalRegisteredAsSidecar is not in the output (assuming
-	// JSON encoding). Right now this is not the case becuase the services
+	// JSON encoding). Right now this is not the case because the services
 	// endpoint happens to use the api struct which doesn't include that field,
 	// but this test serves as a regression test incase we change the endpoint to
 	// return the internal struct later and accidentally expose some "internal"
@@ -2315,9 +2316,9 @@ func TestAgent_RegisterService_TranslateKeys(t *testing.T) {
 
 	json := `
 	{
-		"name":"test", 
-		"port":8000, 
-		"enable_tag_override": true, 
+		"name":"test",
+		"port":8000,
+		"enable_tag_override": true,
 		"meta": {
 			"some": "meta",
 			"enable_tag_override": "meta is 'opaque' so should not get translated"
@@ -2367,9 +2368,9 @@ func TestAgent_RegisterService_TranslateKeys(t *testing.T) {
 				]
 			},
 			"sidecar_service": {
-				"name":"test-proxy", 
-				"port":8001, 
-				"enable_tag_override": true, 
+				"name":"test-proxy",
+				"port":8001,
+				"enable_tag_override": true,
 				"meta": {
 					"some": "meta",
 					"enable_tag_override": "sidecar_service.meta is 'opaque' so should not get translated"
@@ -3229,7 +3230,7 @@ func TestAgent_RegisterServiceDeregisterService_Sidecar(t *testing.T) {
 			require := require.New(t)
 
 			// Constrain auto ports to 1 available to make it deterministic
-			hcl := `ports { 
+			hcl := `ports {
 				sidecar_min_port = 2222
 				sidecar_max_port = 2222
 			}
@@ -5974,4 +5975,56 @@ func testAllowProxyConfig() string {
 			}
 		}
 	`
+}
+
+func TestAgent_Host(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	dc1 := "dc1"
+	a := NewTestAgent(t.Name(), `
+	acl_datacenter = "`+dc1+`"
+	acl_default_policy = "allow"
+	acl_master_token = "master"
+	acl_agent_token = "agent"
+	acl_agent_master_token = "towel"
+	acl_enforce_version_8 = true
+`)
+	defer a.Shutdown()
+
+	testrpc.WaitForLeader(t, a.RPC, "dc1")
+	req, _ := http.NewRequest("GET", "/v1/agent/host?token=master", nil)
+	resp := httptest.NewRecorder()
+	respRaw, err := a.srv.AgentHost(resp, req)
+	assert.Nil(err)
+	assert.Equal(http.StatusOK, resp.Code)
+	assert.NotNil(respRaw)
+
+	obj := respRaw.(*debug.HostInfo)
+	assert.NotNil(obj.CollectionTime)
+	assert.Empty(obj.Errors)
+}
+
+func TestAgent_HostBadACL(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	dc1 := "dc1"
+	a := NewTestAgent(t.Name(), `
+	acl_datacenter = "`+dc1+`"
+	acl_default_policy = "deny"
+	acl_master_token = "root"
+	acl_agent_token = "agent"
+	acl_agent_master_token = "towel"
+	acl_enforce_version_8 = true
+`)
+	defer a.Shutdown()
+
+	testrpc.WaitForLeader(t, a.RPC, "dc1")
+	req, _ := http.NewRequest("GET", "/v1/agent/host?token=agent", nil)
+	resp := httptest.NewRecorder()
+	respRaw, err := a.srv.AgentHost(resp, req)
+	assert.EqualError(err, "ACL not found")
+	assert.Equal(http.StatusOK, resp.Code)
+	assert.Nil(respRaw)
 }

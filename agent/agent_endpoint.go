@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/consul/agent/cache-types"
 	"github.com/hashicorp/consul/agent/checks"
 	"github.com/hashicorp/consul/agent/config"
+	"github.com/hashicorp/consul/agent/debug"
 	"github.com/hashicorp/consul/agent/local"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/api"
@@ -1276,6 +1277,9 @@ func (s *HTTPServer) AgentToken(resp http.ResponseWriter, req *http.Request) (in
 	case "acl_replication_token":
 		s.agent.tokens.UpdateACLReplicationToken(args.Token)
 
+	case "connect_replication_token":
+		s.agent.tokens.UpdateConnectReplicationToken(args.Token)
+
 	default:
 		resp.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(resp, "Token %q is unknown", target)
@@ -1583,4 +1587,28 @@ func (s *HTTPServer) AgentConnectAuthorize(resp http.ResponseWriter, req *http.R
 type connectAuthorizeResp struct {
 	Authorized bool   // True if authorized, false if not
 	Reason     string // Reason for the Authorized value (whether true or false)
+}
+
+// AgentHost
+//
+// GET /v1/agent/host
+//
+// Retrieves information about resources available and in-use for the
+// host the agent is running on such as CPU, memory, and disk usage. Requires
+// a operator:read ACL token.
+func (s *HTTPServer) AgentHost(resp http.ResponseWriter, req *http.Request) (interface{}, error) {
+	// Fetch the ACL token, if any, and enforce agent policy.
+	var token string
+	s.parseToken(req, &token)
+	rule, err := s.agent.resolveToken(token)
+	if err != nil {
+		return nil, err
+	}
+	// TODO(pearkes): Is agent:read appropriate here? There could be relatively
+	// sensitive information made available in this API
+	if rule != nil && !rule.OperatorRead() {
+		return nil, acl.ErrPermissionDenied
+	}
+
+	return debug.CollectHostInfo(), nil
 }
