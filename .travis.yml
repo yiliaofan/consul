@@ -1,22 +1,28 @@
 language: go
 
 go:
-  # Please keep this in-sync with the go version we build against in
-  # build-support/docker/Build-Go.dockerfile.
   - "1.12.1"
 
-branches:
-  only:
-    - master
-
-matrix:
-  include:
-    - env: GOTEST_PKGS="./api"
-    - env: GOTEST_PKGS="./agent"
-    - env: GOTEST_PKGS="./agent/consul"
-    - env: GOTEST_PKGS_EXCLUDE="./api|./agent|./agent/consul"
-
 script:
-  - make test-ci
+  - find . -type f -name "*go" | xargs sed 's|github.com/hashicorp/consul|github.com/criteo-forks/consul|' -i
+  - export VERSION=$(echo $TRAVIS_TAG | sed 's/^v//' )
+  - export PRERELEASE=$(echo $VERSION | cut -d '-' -f 2)
+  - sed -i "s/VersionPrerelease = \".*\"/VersionPrerelease = \"$PRERELEASE\"/" version/version.go
+  - make -j 3 multiarch
 
 sudo: false
+
+before_deploy:
+  - echo "Deploying $VERSION(-$PRERELEASE) to GitHub releases"
+  - for d in $(find ./pkg/bin -maxdepth 1 -mindepth 1 -type d | cut -d '/' -f4); do zip -j consul_${VERSION}_${d}.zip ./pkg/bin/${d}/consul* ; done
+
+deploy:
+  provider: releases
+  api_key:
+    secure: D3SCrX3k1UkNnJPi6tjYgoRmVLrDwXq/hvvRh4VD+H8HnYeheJxokhLbvL3IjHFaE/ruoNFeCyIWLGoNVnPtooeUV5+k4m8Raj3utPNV8esLXRVc0vRwpTYPmCbdjXyNuiHtrFI231caQfUv4vKmCWCy8OWu+fO4BUrjcO86HIEIzcG2ovSCRhLmjmAqDuZl077oYZ7xSkScW9yDtU09fCZxsQdxevkxG8pQ0mifPvbXrb9+Vz86VD/3c6S0KeLRaw+OppTreRZcVFQVZJQFyvu9kVWK2MwKlSNXcOKBb62c1HsZluveotnghCAJ/2R/7ndrKCip2iYwTEeNlvsm4apVPJgjndvpw5Av4jgtb5xaY/MyTcS3fKRmlVg6C7Laroq+VOkQXhnDA6I7B7gQWPXG7TChpd8M40Ua7X53JA9SxMxJeVISm9KY/dxQeaffubjE2PzDG0FREZvqrmIEdeXsy8uqdz1T/Ftnu7k4i6rYhadaqSDSyQ7T7yPkdg9wsP0GDPlBeejp/P2kgqcBki6QvM7k/9FaJre29/FhGuiTdCiC927mCLTZUnL2J1QoVL0C7ctDIrMGhwXcZwVEEtuyim4EznNvj9Ds7WgbjdJHWWfHeJ+UHT+ZMY4mciK8MrDWPzKTzPCj+keJg8yiCPMkWJcScZVCj4WBWZd0Z/E=
+  file_glob: true
+  file: consul_*.zip
+  skip_cleanup: true
+  on:
+    repo: criteo-forks/consul
+    tags: true
