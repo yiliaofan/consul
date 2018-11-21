@@ -1140,6 +1140,7 @@ func (a *Agent) consulConfig() (*consul.Config, error) {
 	}
 
 	base.ConfigEntryBootstrap = a.config.ConfigEntryBootstrap
+	base.WatchSoftLimit = a.config.WatchSoftLimit
 
 	return base, nil
 }

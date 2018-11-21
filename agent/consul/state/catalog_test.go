@@ -1072,7 +1072,7 @@ func TestStateStore_GetNodes(t *testing.T) {
 }
 
 func BenchmarkGetNodes(b *testing.B) {
-	s, err := NewStateStore(nil)
+	s, err := NewStateStore(nil, testWatchLimit)
 	if err != nil {
 		b.Fatalf("err: %s", err)
 	}
@@ -1721,7 +1721,7 @@ func TestStateStore_ServicesByNodeMeta(t *testing.T) {
 
 	// Overwhelm the service tracking.
 	idx = 6
-	for i := 0; i < 2*watchLimit; i++ {
+	for i := 0; i < 2*testWatchLimit; i++ {
 		node := fmt.Sprintf("many%d", i)
 		testRegisterNodeWithMeta(t, s, idx, node, map[string]string{"common": "1"})
 		idx++
@@ -1860,7 +1860,7 @@ func TestStateStore_ServiceNodes(t *testing.T) {
 
 	// Overwhelm the node tracking.
 	idx = 19
-	for i := 0; i < 2*watchLimit; i++ {
+	for i := 0; i < 2*testWatchLimit; i++ {
 		node := fmt.Sprintf("many%d", i)
 		if err := s.EnsureNode(idx, &structs.Node{Node: node, Address: "127.0.0.1"}); err != nil {
 			t.Fatalf("err: %v", err)
@@ -2524,7 +2524,7 @@ func TestStateStore_ServiceChecksByNodeMeta(t *testing.T) {
 	}
 
 	// Overwhelm the node tracking.
-	for i := 0; i < 2*watchLimit; i++ {
+	for i := 0; i < 2*testWatchLimit; i++ {
 		node := fmt.Sprintf("many%d", idx)
 		testRegisterNodeWithMeta(t, s, idx, node, map[string]string{"common": "1"})
 		idx++
@@ -2707,7 +2707,7 @@ func TestStateStore_ChecksInStateByNodeMeta(t *testing.T) {
 	}
 
 	// Overwhelm the node tracking.
-	for i := 0; i < 2*watchLimit; i++ {
+	for i := 0; i < 2*testWatchLimit; i++ {
 		node := fmt.Sprintf("many%d", idx)
 		testRegisterNodeWithMeta(t, s, idx, node, map[string]string{"common": "1"})
 		idx++
@@ -3417,11 +3417,43 @@ func TestStateStore_CheckServiceNodes(t *testing.T) {
 		t.Fatalf("bad")
 	}
 
-	// Note that we can't overwhelm chan tracking any more since we optimized it
-	// to only need to watch one chan in the happy path. The only path that does
-	// bees to watch more stuff is where there are no service instances which also
-	// means fewer than watchLimit chans too so effectively no way to trigger
-	// Fallback watch any more.
+	// Overwhelm node and check tracking.
+	idx = 13
+	for i := 0; i < 2*testWatchLimit; i++ {
+		node := fmt.Sprintf("many%d", i)
+		testRegisterNode(t, s, idx, node)
+		idx++
+		testRegisterCheck(t, s, idx, node, "", "check1", api.HealthPassing)
+		idx++
+		testRegisterService(t, s, idx, node, "service1")
+		idx++
+		testRegisterCheck(t, s, idx, node, "service1", "check2", api.HealthPassing)
+		idx++
+	}
+
+	// Now registering an unrelated node will fire the watch.
+	ws = memdb.NewWatchSet()
+	idx, results, err = s.CheckServiceNodes(ws, "service1")
+	if err != nil {
+		t.Fatalf("err: %s", err)
+	}
+	testRegisterNode(t, s, idx, "more-nope")
+	idx++
+	if !watchFired(ws) {
+		t.Fatalf("bad")
+	}
+
+	// Also, registering an unrelated check will fire the watch.
+	ws = memdb.NewWatchSet()
+	idx, results, err = s.CheckServiceNodes(ws, "service1")
+	if err != nil {
+		t.Fatalf("err: %s", err)
+	}
+	testRegisterCheck(t, s, idx, "more-nope", "", "check1", api.HealthPassing)
+	idx++
+	if !watchFired(ws) {
+		t.Fatalf("bad")
+	}
 }
 
 func TestStateStore_CheckConnectServiceNodes(t *testing.T) {
@@ -3467,7 +3499,7 @@ func TestStateStore_CheckConnectServiceNodes(t *testing.T) {
 }
 
 func BenchmarkCheckServiceNodes(b *testing.B) {
-	s, err := NewStateStore(nil)
+	s, err := NewStateStore(nil, testWatchLimit)
 	if err != nil {
 		b.Fatalf("err: %s", err)
 	}

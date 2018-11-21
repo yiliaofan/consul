@@ -889,6 +889,7 @@ func (b *Builder) Build() (rt RuntimeConfig, err error) {
 		VerifyOutgoing:                          verifyOutgoing,
 		VerifyServerHostname:                    verifyServerName,
 		Watches:                                 c.Watches,
+		WatchSoftLimit:                          b.intValWithDefault(c.WatchSoftLimit, consul.DefaultSoftWatchLimit),
 	}
 
 	if rt.BootstrapExpect == 1 {
@@ -1350,6 +1351,13 @@ func (b *Builder) durationVal(name string, v *string) (d time.Duration) {
 func (b *Builder) intVal(v *int) int {
 	if v == nil {
 		return 0
+	}
+	return *v
+}
+
+func (b *Builder) intValWithDefault(v *int, defaultVal int) int {
+	if v == nil {
+		return defaultVal
 	}
 	return *v
 }

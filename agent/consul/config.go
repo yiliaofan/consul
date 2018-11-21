@@ -33,6 +33,11 @@ const (
 	// MaxRaftMultiplier is a fairly arbitrary upper bound that limits the
 	// amount of performance detuning that's possible.
 	MaxRaftMultiplier uint = 10
+
+	// DefaultSoftWatchLimit is used as a soft limit to cap how many watches we allow
+	// for a given blocking query. If this is exceeded, then we will use a
+	// higher-level watch that's less fine-grained.
+	DefaultSoftWatchLimit = 2048
 )
 
 var (
@@ -410,6 +415,10 @@ type Config struct {
 	// ConfigEntryBootstrap contains a list of ConfigEntries to ensure are created
 	// If entries of the same Kind/Name exist already these will not update them.
 	ConfigEntryBootstrap []structs.ConfigEntry
+	// WatchSoftLimit is used as a soft limit to cap how many watches we allow
+	// for a given blocking query. If this is exceeded, then we will use a
+	// higher-level watch that's less fine-grained.
+	WatchSoftLimit int
 }
 
 func (c *Config) ToTLSUtilConfig() tlsutil.Config {

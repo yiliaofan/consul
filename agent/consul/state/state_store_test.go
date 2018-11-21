@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testWatchLimit = 1024
+)
+
 func testUUID() string {
 	buf := make([]byte, 16)
 	if _, err := crand.Read(buf); err != nil {
@@ -27,7 +31,7 @@ func testUUID() string {
 }
 
 func testStateStore(t *testing.T) *Store {
-	s, err := NewStateStore(nil)
+	s, err := NewStateStore(nil, testWatchLimit)
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}
