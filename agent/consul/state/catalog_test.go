@@ -1072,7 +1072,7 @@ func TestStateStore_GetNodes(t *testing.T) {
 }
 
 func BenchmarkGetNodes(b *testing.B) {
-	s, err := NewStateStore(nil, testWatchLimit)
+	s, err := NewStateStore(nil, testWatchLimit, nil)
 	if err != nil {
 		b.Fatalf("err: %s", err)
 	}
@@ -3499,7 +3499,7 @@ func TestStateStore_CheckConnectServiceNodes(t *testing.T) {
 }
 
 func BenchmarkCheckServiceNodes(b *testing.B) {
-	s, err := NewStateStore(nil, testWatchLimit)
+	s, err := NewStateStore(nil, testWatchLimit, nil)
 	if err != nil {
 		b.Fatalf("err: %s", err)
 	}

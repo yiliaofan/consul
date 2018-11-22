@@ -889,7 +889,7 @@ func (b *Builder) Build() (rt RuntimeConfig, err error) {
 		VerifyOutgoing:                          verifyOutgoing,
 		VerifyServerHostname:                    verifyServerName,
 		Watches:                                 c.Watches,
-		WatchSoftLimit:                          b.intValWithDefault(c.WatchSoftLimit, consul.DefaultSoftWatchLimit),
+		WatchSoftLimit:                          b.intValWithDefault(c.Performance.WatchSoftLimit, consul.DefaultSoftWatchLimit),
 	}
 
 	if rt.BootstrapExpect == 1 {
