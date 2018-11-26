@@ -3227,11 +3227,6 @@ func (a *Agent) loadMetadata(conf *config.RuntimeConfig) error {
 	return a.State.LoadMetadata(meta)
 }
 
-// unloadMetadata resets the local metadata state
-func (a *Agent) unloadMetadata() {
-	a.State.UnloadMetadata()
-}
-
 // serviceMaintCheckID returns the ID of a given service's maintenance check
 func serviceMaintCheckID(serviceID string) types.CheckID {
 	return types.CheckID(structs.ServiceMaintPrefix + serviceID)
