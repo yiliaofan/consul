@@ -15,8 +15,6 @@ import (
 	"github.com/hashicorp/consul/acl"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/agent/token"
-	"github.com/hashicorp/consul/api"
-	"github.com/hashicorp/consul/lib"
 	"github.com/hashicorp/consul/types"
 )
 
@@ -103,6 +101,14 @@ func NewState(c Config, lg *log.Logger, tokens *token.Store) *State {
 	return l
 }
 
+func (l *State) Tnx() *Tnx {
+	l.Lock()
+	return &Tnx{
+		s:    l,
+		data: l.data.clone(),
+	}
+}
+
 // SetDiscardCheckOutput configures whether the check output
 // is discarded. This can be changed at runtime.
 func (l *State) SetDiscardCheckOutput(b bool) {
@@ -159,84 +165,6 @@ func (l *State) Services() map[string]*structs.NodeService {
 	return m
 }
 
-// UpdateCheck is used to update the status of a check
-func (l *State) UpdateCheck(id types.CheckID, status, output string) {
-	l.Lock()
-	defer l.Unlock()
-
-	c := l.checks[id]
-	if c == nil || c.Deleted {
-		return
-	}
-
-	if l.discardCheckOutput.Load().(bool) {
-		output = ""
-	}
-
-	// Update the critical time tracking (this doesn't cause a server updates
-	// so we can always keep this up to date).
-	if status == api.HealthCritical {
-		if !c.Critical() {
-			c.CriticalTime = time.Now()
-		}
-	} else {
-		c.CriticalTime = time.Time{}
-	}
-
-	// Do nothing if update is idempotent
-	if c.Check.Status == status && c.Check.Output == output {
-		return
-	}
-
-	// Defer a sync if the output has changed. This is an optimization around
-	// frequent updates of output. Instead, we update the output internally,
-	// and periodically do a write-back to the servers. If there is a status
-	// change we do the write immediately.
-	if l.config.CheckUpdateInterval > 0 && c.Check.Status == status {
-		c.Check.Output = output
-		if c.DeferCheck == nil {
-			d := l.config.CheckUpdateInterval
-			intv := time.Duration(uint64(d)/2) + lib.RandomStagger(d)
-			c.DeferCheck = time.AfterFunc(intv, func() {
-				l.Lock()
-				defer l.Unlock()
-
-				c := l.checks[id]
-				if c == nil {
-					return
-				}
-				c.DeferCheck = nil
-				if c.Deleted {
-					return
-				}
-				c.InSync = false
-				l.TriggerSyncChanges()
-			})
-		}
-		return
-	}
-
-	// If this is a check for an aliased service, then notify the waiters.
-	if aliases, ok := l.checkAliases[c.Check.ServiceID]; ok && len(aliases) > 0 {
-		for _, notifyCh := range aliases {
-			// Do not block. All notify channels should be buffered to at
-			// least 1 in which case not-blocking does not result in loss
-			// of data because a failed send means a notification is
-			// already queued. This must be called with the lock held.
-			select {
-			case notifyCh <- struct{}{}:
-			default:
-			}
-		}
-	}
-
-	// Update status and mark out of sync
-	c.Check.Status = status
-	c.Check.Output = output
-	c.InSync = false
-	l.TriggerSyncChanges()
-}
-
 // Check returns the locally registered check that the
 // agent is aware of and are being kept in sync with the server
 func (l *State) Check(id types.CheckID) *structs.HealthCheck {
@@ -247,7 +175,7 @@ func (l *State) Check(id types.CheckID) *structs.HealthCheck {
 	if c.Deleted {
 		return nil
 	}
-	return c.Check
+	return &c.Check
 }
 
 // Checks returns the locally registered checks that the
@@ -255,7 +183,7 @@ func (l *State) Check(id types.CheckID) *structs.HealthCheck {
 func (l *State) Checks() map[types.CheckID]*structs.HealthCheck {
 	m := make(map[types.CheckID]*structs.HealthCheck)
 	for id, c := range l.CheckStates() {
-		m[id] = c.Check
+		m[id] = &c.Check
 	}
 	return m
 }
@@ -325,7 +253,8 @@ func (l *State) CriticalCheckStates() map[types.CheckID]*CheckState {
 func (l *State) Proxy(id string) *ManagedProxy {
 	l.RLock()
 	defer l.RUnlock()
-	return l.data.managedProxies[id]
+	p := l.data.managedProxies[id]
+	return &p
 }
 
 // Proxies returns the locally registered proxies.
@@ -335,7 +264,7 @@ func (l *State) Proxies() map[string]*ManagedProxy {
 
 	m := make(map[string]*ManagedProxy)
 	for id, p := range l.data.managedProxies {
-		m[id] = p
+		m[id] = &p
 	}
 	return m
 }
@@ -764,7 +693,7 @@ func (l *State) syncService(id string) error {
 		if l.serviceToken(id) != l.data.checks[checkID].Token {
 			continue
 		}
-		checks = append(checks, c.Check)
+		checks = append(checks, &c.Check)
 	}
 
 	req := structs.RegisterRequest{
@@ -835,7 +764,7 @@ func (l *State) syncCheck(id types.CheckID) error {
 		Address:         l.config.AdvertiseAddr,
 		TaggedAddresses: l.config.TaggedAddresses,
 		NodeMeta:        l.data.metadata,
-		Check:           c.Check,
+		Check:           &c.Check,
 		WriteRequest:    structs.WriteRequest{Token: l.data.checks[id].Token},
 	}
 

@@ -48,7 +48,7 @@ func (s *ServiceState) Clone() *ServiceState {
 // CheckState describes the state of a health check record.
 type CheckState struct {
 	// Check is the local copy of the health check record.
-	Check *structs.HealthCheck
+	Check structs.HealthCheck
 
 	// Token is the ACL record to update or delete the health check
 	// record on the server.
@@ -143,8 +143,8 @@ type stateData struct {
 	managedProxies map[string]ManagedProxy
 }
 
-func newStateData() stateData {
-	return stateData{
+func newStateData() *stateData {
+	return &stateData{
 		services:     make(map[string]ServiceState),
 		checks:       make(map[types.CheckID]CheckState),
 		checkAliases: make(map[string]map[types.CheckID]chan<- struct{}),
@@ -152,7 +152,7 @@ func newStateData() stateData {
 	}
 }
 
-func (s *stateData) clone() stateData {
+func (s *stateData) clone() *stateData {
 	clone := newStateData()
 
 	for k, v := range s.services {

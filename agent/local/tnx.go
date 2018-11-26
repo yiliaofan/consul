@@ -3,24 +3,107 @@ package local
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/hashicorp/consul/agent/structs"
+	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/consul/lib"
 	"github.com/hashicorp/consul/types"
 	uuid "github.com/hashicorp/go-uuid"
 )
 
 type op interface {
-	apply(s *State, d *stateData) error
+	apply(s *State, d *stateData) (bool, error)
 }
 
 type setNodeMetaOp struct {
 	data map[string]string
 }
 
-func (o setNodeMetaOp) apply(s *State, d *stateData) error {
+func (o setNodeMetaOp) apply(s *State, d *stateData) (bool, error) {
 	d.metadata = o.data
 
-	return nil
+	return true, nil
+}
+
+type updateCheckOp struct {
+	id     types.CheckID
+	status string
+	output string
+}
+
+func (o updateCheckOp) apply(s *State, d *stateData) (bool, error) {
+	c := d.checks[o.id]
+	if c.Deleted {
+		return false, nil
+	}
+
+	if s.discardCheckOutput.Load().(bool) {
+		o.output = ""
+	}
+
+	// Update the critical time tracking (this doesn't cause a server updates
+	// so we can always keep this up to date).
+	if o.status == api.HealthCritical {
+		if !c.Critical() {
+			c.CriticalTime = time.Now()
+		}
+	} else {
+		c.CriticalTime = time.Time{}
+	}
+
+	// Do nothing if update is idempotent
+	if c.Check.Status == o.status && c.Check.Output == o.output {
+		return false, nil
+	}
+
+	// Defer a sync if the output has changed. This is an optimization around
+	// frequent updates of output. Instead, we update the output internally,
+	// and periodically do a write-back to the servers. If there is a status
+	// change we do the write immediately.
+	if s.config.CheckUpdateInterval > 0 && c.Check.Status == o.status {
+		c.Check.Output = o.output
+		if c.DeferCheck == nil {
+			d := s.config.CheckUpdateInterval
+			intv := time.Duration(uint64(d)/2) + lib.RandomStagger(d)
+			c.DeferCheck = time.AfterFunc(intv, func() {
+				// TODO unmess
+				s.Lock()
+				defer s.Unlock()
+
+				c := s.data.checks[o.id]
+
+				c.DeferCheck = nil
+				if c.Deleted {
+					return
+				}
+				c.InSync = false
+				s.TriggerSyncChanges()
+			})
+		}
+		return false, nil
+	}
+
+	// If this is a check for an aliased service, then notify the waiters.
+	if aliases, ok := d.checkAliases[c.Check.ServiceID]; ok && len(aliases) > 0 {
+		for _, notifyCh := range aliases {
+			// Do not block. All notify channels should be buffered to at
+			// least 1 in which case not-blocking does not result in loss
+			// of data because a failed send means a notification is
+			// already queued. This must be called with the lock held.
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+		}
+	}
+
+	// Update status and mark out of sync
+	c.Check.Status = o.status
+	c.Check.Output = o.output
+	c.InSync = false
+
+	return true, nil
 }
 
 type addServiceOp struct {
@@ -28,9 +111,9 @@ type addServiceOp struct {
 	token   string
 }
 
-func (o addServiceOp) apply(s *State, d *stateData) error {
+func (o addServiceOp) apply(s *State, d *stateData) (bool, error) {
 	if o.service == nil {
-		return fmt.Errorf("no service")
+		return false, fmt.Errorf("no service")
 	}
 
 	// use the service name as id if the id was omitted
@@ -43,7 +126,7 @@ func (o addServiceOp) apply(s *State, d *stateData) error {
 		Token:   o.token,
 	}
 
-	return nil
+	return true, nil
 }
 
 type addCheckOp struct {
@@ -52,11 +135,11 @@ type addCheckOp struct {
 	token     string
 }
 
-func (o addCheckOp) apply(s *State, d *stateData) error {
-	check := o.check.Clone()
+func (o addCheckOp) apply(s *State, d *stateData) (bool, error) {
+	check := *o.check.Clone()
 
 	if check.CheckID == "" {
-		return fmt.Errorf("CheckID missing")
+		return false, fmt.Errorf("CheckID missing")
 	}
 
 	if s.discardCheckOutput.Load().(bool) {
@@ -66,7 +149,7 @@ func (o addCheckOp) apply(s *State, d *stateData) error {
 	// if there is a serviceID associated with the check, make sure it exists before adding it
 	// NOTE - This logic may be moved to be handled within the Agent's Addcheck method after a refactor
 	if _, ok := d.services[check.ServiceID]; check.ServiceID != "" && !ok {
-		return fmt.Errorf("Check %q refers to non-existent service %q", check.CheckID, check.ServiceID)
+		return false, fmt.Errorf("Check %q refers to non-existent service %q", check.CheckID, check.ServiceID)
 	}
 
 	// hard-set the node name
@@ -89,7 +172,7 @@ func (o addCheckOp) apply(s *State, d *stateData) error {
 		Token: o.token,
 	}
 
-	return nil
+	return true, nil
 }
 
 type addAliasCheckOp struct {
@@ -98,7 +181,7 @@ type addAliasCheckOp struct {
 	notifyCh     chan<- struct{}
 }
 
-func (o addAliasCheckOp) apply(s *State, d *stateData) error {
+func (o addAliasCheckOp) apply(s *State, d *stateData) (bool, error) {
 	m, ok := d.checkAliases[o.srcServiceID]
 	if !ok {
 		m = make(map[types.CheckID]chan<- struct{})
@@ -106,40 +189,40 @@ func (o addAliasCheckOp) apply(s *State, d *stateData) error {
 	}
 	m[o.checkID] = o.notifyCh
 
-	return nil
+	return true, nil
 }
 
 type removeServiceOp struct {
 	serviceID string
 }
 
-func (o removeServiceOp) apply(s *State, d *stateData) error {
+func (o removeServiceOp) apply(s *State, d *stateData) (bool, error) {
 	service, ok := d.services[o.serviceID]
 	if !ok {
-		return fmt.Errorf("Service %s does not exist", o.serviceID)
+		return false, fmt.Errorf("Service %s does not exist", o.serviceID)
 	}
 
 	service.Deleted = true
 	service.InSync = false
 	d.services[o.serviceID] = service
 
-	return nil
+	return true, nil
 }
 
 type removeCheckOp struct {
 	checkID types.CheckID
 }
 
-func (o removeCheckOp) apply(s *State, d *stateData) error {
+func (o removeCheckOp) apply(s *State, d *stateData) (bool, error) {
 	check, ok := d.checks[o.checkID]
 	if !ok {
-		return fmt.Errorf("Check %s does not exist", o.checkID)
+		return false, fmt.Errorf("Check %s does not exist", o.checkID)
 	}
 
 	check.Deleted = true
 	d.checks[o.checkID] = check
 
-	return nil
+	return true, nil
 }
 
 type removeCheckAliasOp struct {
@@ -147,7 +230,7 @@ type removeCheckAliasOp struct {
 	srcServiceID string
 }
 
-func (o removeCheckAliasOp) apply(s *State, d *stateData) error {
+func (o removeCheckAliasOp) apply(s *State, d *stateData) (bool, error) {
 	if m, ok := d.checkAliases[o.srcServiceID]; ok {
 		delete(m, o.checkID)
 		if len(m) == 0 {
@@ -155,7 +238,7 @@ func (o removeCheckAliasOp) apply(s *State, d *stateData) error {
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 type addProxyOp struct {
@@ -164,22 +247,22 @@ type addProxyOp struct {
 	restoredProxyToken string
 }
 
-func (o addProxyOp) apply(s *State, d *stateData) error {
+func (o addProxyOp) apply(s *State, d *stateData) (bool, error) {
 	if o.proxy == nil {
-		return fmt.Errorf("no proxy")
+		return false, fmt.Errorf("no proxy")
 	}
 
 	// Lookup the local service
 	target, ok := d.services[o.proxy.TargetServiceID]
 	if !ok {
-		return fmt.Errorf("target service ID %s not registered",
+		return false, fmt.Errorf("target service ID %s not registered",
 			o.proxy.TargetServiceID)
 	}
 
 	// Get bind info from config
 	cfg, err := o.proxy.ParseConfig()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Construct almost all of the NodeService that needs to be registered by the
@@ -224,7 +307,7 @@ func (o addProxyOp) apply(s *State, d *stateData) error {
 	if pToken == "" {
 		pToken, err = uuid.GenerateUUID()
 		if err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -249,7 +332,7 @@ func (o addProxyOp) apply(s *State, d *stateData) error {
 	}
 	// If no ports left (or auto ports disabled) fail
 	if svc.Port < 1 {
-		return fmt.Errorf("no port provided for proxy bind_port and none "+
+		return false, fmt.Errorf("no port provided for proxy bind_port and none "+
 			" left in the allocated range [%d, %d]", s.config.ProxyBindMinPort,
 			s.config.ProxyBindMaxPort)
 	}
@@ -272,26 +355,42 @@ func (o addProxyOp) apply(s *State, d *stateData) error {
 
 	//TODO managed proxy event
 
-	return nil
+	// No need to trigger sync as proxy state is local only.
+	return false, nil
 }
 
 type Tnx struct {
-	s    *State
-	data *stateData
-	ops  []op
+	s         *State
+	data      *stateData
+	discarded bool
+
+	ops []op
 }
 
 func (t *Tnx) Discard() {
+	if t.discarded {
+		return
+	}
+	t.discarded = true
 	t.s.Unlock()
 }
 
 func (t *Tnx) Commit() error {
+	if t.discarded {
+		return fmt.Errorf("local state transaction discarded")
+	}
+
 	defer t.Discard()
 
+	changed := false
+
 	for _, op := range t.ops {
-		err := op.apply(t.s, t.data)
+		c, err := op.apply(t.s, t.data)
 		if err != nil {
 			return err
+		}
+		if c {
+			changed = true
 		}
 	}
 
@@ -310,9 +409,11 @@ func (t *Tnx) Commit() error {
 		}
 	}
 
-	t.s.data = t.data
-	t.s.TriggerSyncChanges()
-	t.s.broadcastUpdateLocked()
+	if changed {
+		t.s.data = t.data
+		t.s.TriggerSyncChanges()
+		t.s.broadcastUpdateLocked()
+	}
 
 	return nil
 }
@@ -335,6 +436,15 @@ func (t *Tnx) AddCheck(check *structs.HealthCheck, checkTask checkTask, token st
 		check:     check,
 		checkTask: checkTask,
 		token:     token,
+	})
+}
+
+// UpdateCheck is used to update the status of a check
+func (t *Tnx) UpdateCheck(id types.CheckID, status, output string) {
+	t.ops = append(t.ops, updateCheckOp{
+		id:     id,
+		status: status,
+		output: output,
 	})
 }
 
@@ -389,7 +499,9 @@ func (t *Tnx) RemoveAliasCheck(checkID types.CheckID, serviceID string) {
 // definitions from disk; new proxies must leave it blank to get a new token
 // assigned. We need to restore from disk to enable to continue authenticating
 // running proxies that already had that credential injected.
-func (t *Tnx) AddProxy() {}
+func (t *Tnx) AddProxy(proxy *structs.ConnectManagedProxy, token string, restoredProxyToken string) {
+	t.ops = append(t.ops, addProxyOp{})
+}
 
 // SetNodeMeta sets the node metadata
 func (t *Tnx) SetNodeMeta(meta map[string]string) {
