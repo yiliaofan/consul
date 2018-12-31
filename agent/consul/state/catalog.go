@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/types"
-	"github.com/hashicorp/go-memdb"
+	memdb "github.com/hashicorp/go-memdb"
 	uuid "github.com/hashicorp/go-uuid"
 )
 
@@ -97,6 +97,48 @@ func servicesTableSchema() *memdb.TableSchema {
 				AllowMissing: true,
 				Unique:       false,
 				Indexer:      &IndexConnectService{},
+			},
+		},
+	}
+}
+
+type checkServiceNodeEntry struct {
+	ServiceID   string
+	ServiceName string
+	NodeID      string
+
+	Entry structs.CheckServiceNode
+}
+
+func checkServiceNodeTableSchema() *memdb.TableSchema {
+	return &memdb.TableSchema{
+		Name: "check_service_node",
+		Indexes: map[string]*memdb.IndexSchema{
+			"id": &memdb.IndexSchema{
+				Name:         "id",
+				AllowMissing: false,
+				Unique:       false,
+				Indexer: &memdb.CompoundIndex{
+					Indexes: []memdb.Indexer{
+						&memdb.StringFieldIndex{
+							Field:     "NodeID",
+							Lowercase: true,
+						},
+						&memdb.StringFieldIndex{
+							Field:     "ServiceID",
+							Lowercase: true,
+						},
+					},
+				},
+			},
+			"service": &memdb.IndexSchema{
+				Name:         "service",
+				AllowMissing: true,
+				Unique:       false,
+				Indexer: &memdb.StringFieldIndex{
+					Field:     "ServiceName",
+					Lowercase: true,
+				},
 			},
 		},
 	}
@@ -194,6 +236,7 @@ func init() {
 	registerSchema(nodesTableSchema)
 	registerSchema(servicesTableSchema)
 	registerSchema(checksTableSchema)
+	registerSchema(checkServiceNodeTableSchema)
 }
 
 const (
@@ -320,7 +363,6 @@ func (s *Store) ensureRegistrationTxn(tx *memdb.Txn, idx uint64, req *structs.Re
 		if existing == nil || !(existing.(*structs.ServiceNode).ToNodeService()).IsSame(req.Service) {
 			if err := s.ensureServiceTxn(tx, idx, req.Node, req.Service); err != nil {
 				return fmt.Errorf("failed inserting service: %s", err)
-
 			}
 		}
 	}
@@ -337,10 +379,10 @@ func (s *Store) ensureRegistrationTxn(tx *memdb.Txn, idx uint64, req *structs.Re
 		}
 	}
 
-	return s.populateCheckServiceNodesForNode(tx, idx, req.Node)
+	return s.ensureCheckServiceNodeTnxForNode(tx, idx, req.Node)
 }
 
-func (s *Store) populateCheckServiceNodesForNode(tx *memdb.Txn, idx uint64, node string) error {
+func (s *Store) ensureCheckServiceNodeTnxForNode(tx *memdb.Txn, idx uint64, node string) error {
 	// Iterate all services on the node and fix up their denormalised results
 	services, err := tx.Get("services", "node", node)
 	if err != nil {
@@ -352,7 +394,7 @@ func (s *Store) populateCheckServiceNodesForNode(tx *memdb.Txn, idx uint64, node
 		sns = append(sns, svc)
 	}
 
-	return s.populateCheckServiceNodes(tx, idx, sns)
+	return s.ensureCheckServiceNodeTnx(tx, idx, sns)
 }
 
 // EnsureNode is used to upsert node registration or modification.
@@ -365,7 +407,7 @@ func (s *Store) EnsureNode(idx uint64, node *structs.Node) error {
 		return err
 	}
 
-	if err := s.populateCheckServiceNodesForNode(tx, idx, node.Node); err != nil {
+	if err := s.ensureCheckServiceNodeTnxForNode(tx, idx, node.Node); err != nil {
 		return err
 	}
 
@@ -691,10 +733,6 @@ func (s *Store) EnsureService(idx uint64, node string, svc *structs.NodeService)
 		return err
 	}
 
-	if err := s.populateCheckServiceNodesForNode(tx, idx, node); err != nil {
-		return err
-	}
-
 	tx.Commit()
 	return nil
 }
@@ -749,6 +787,7 @@ func (s *Store) ensureServiceTxn(tx *memdb.Txn, idx uint64, node string, svc *st
 	if err := tx.Insert("index", &IndexEntry{serviceIndexName(svc.Service), idx}); err != nil {
 		return fmt.Errorf("failed updating index: %s", err)
 	}
+	s.ensureCheckServiceNodeTnx(tx, idx, structs.ServiceNodes{entry})
 
 	return nil
 }
@@ -1258,7 +1297,7 @@ func (s *Store) EnsureCheck(idx uint64, hc *structs.HealthCheck) error {
 		return err
 	}
 
-	if err := s.populateCheckServiceNodesForNode(tx, idx, hc.Node); err != nil {
+	if err := s.ensureCheckServiceNodeTnxForNode(tx, idx, hc.Node); err != nil {
 		return err
 	}
 
@@ -1661,27 +1700,21 @@ func (s *Store) checkServiceNodes(ws memdb.WatchSet, serviceName string, connect
 	// Get the table index.
 	idx := maxIndexForService(tx, serviceName, true)
 
-	// Function for lookup
-	var f func() (memdb.ResultIterator, error)
-	if !connect {
-		f = func() (memdb.ResultIterator, error) {
-			return tx.Get("services", "service", serviceName)
-		}
-	} else {
-		f = func() (memdb.ResultIterator, error) {
-			return tx.Get("services", "connect", serviceName)
-		}
-	}
-
 	// Query the state store for the service.
-	iter, err := f()
+	var iter memdb.ResultIterator
+	var err error
+	if !connect {
+		iter, err = tx.Get("check_service_node", "service", serviceName)
+	} else {
+		iter, err = tx.Get("check_service_node", "connect", serviceName)
+	}
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed service lookup: %s", err)
 	}
 	ws.Add(iter.WatchCh())
 
 	// Return the results.
-	var results structs.ServiceNodes
+	var results structs.CheckServiceNodes
 	for service := iter.Next(); service != nil; service = iter.Next() {
 		results = append(results, service.(*structs.ServiceNode))
 	}
@@ -1698,16 +1731,16 @@ func (s *Store) CheckServiceTagNodes(ws memdb.WatchSet, serviceName string, tags
 	idx := maxIndexForService(tx, serviceName, true)
 
 	// Query the state store for the service.
-	iter, err := tx.Get("services", "service", serviceName)
+	iter, err := tx.Get("check_service_node", "service", serviceName)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed service lookup: %s", err)
 	}
 	ws.Add(iter.WatchCh())
 
 	// Return the results, filtering by tag.
-	var results structs.ServiceNodes
+	var results structs.CheckServiceNodes
 	for service := iter.Next(); service != nil; service = iter.Next() {
-		svc := service.(*structs.ServiceNode)
+		svc := service.(*checkServiceNodeEntry)
 		if !serviceTagsFilter(svc, tags) {
 			results = append(results, svc)
 		}
@@ -1799,7 +1832,7 @@ func (s *Store) parseCheckServiceNodes(
 	return idx, results, nil
 }
 
-func (s *Store) populateCheckServiceNodes(
+func (s *Store) ensureCheckServiceNodeTnx(
 	tx *memdb.Txn, idx uint64, services structs.ServiceNodes) error {
 
 	// Special-case the zero return value to nil, since this ends up in
@@ -1808,7 +1841,7 @@ func (s *Store) populateCheckServiceNodes(
 		return nil
 	}
 
-	for i, sn := range services {
+	for _, sn := range services {
 		// Retrieve the node.
 		n, err := tx.First("nodes", "id", sn.Node)
 		if err != nil {
@@ -1840,12 +1873,22 @@ func (s *Store) populateCheckServiceNodes(
 			checks = append(checks, check.(*structs.HealthCheck))
 		}
 
-		// Populate the ServiceNode
-		services[i].InternalCheckServiceNode.Node = node
-		services[i].InternalCheckServiceNode.Service = sn.ToNodeService()
-		services[i].InternalCheckServiceNode.Checks = checks
+		entry := &checkServiceNodeEntry{
+			ServiceID:   sn.ServiceID,
+			ServiceName: sn.ServiceName,
+			NodeID:      string(node.ID),
+			Entry: structs.CheckServiceNode{
+				Service: sn.ToNodeService(),
+				Node:    node,
+				Checks:  checks,
+			},
+		}
 
-		if err := tx.Insert("index", &IndexEntry{checkServiceIndexName(sn.ServiceName), idx}); err != nil {
+		if err := tx.Insert("check_service_node", entry); err != nil {
+			return fmt.Errorf("failed updating check_service_node view: %s", err)
+		}
+
+		if err := tx.Insert("index", &IndexEntry{"check_service_node", idx}); err != nil {
 			return fmt.Errorf("failed updating index: %s", err)
 		}
 	}
