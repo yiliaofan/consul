@@ -15,11 +15,12 @@
 package cache
 
 import (
-	"container/heap"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bluele/gcache"
 
 	"github.com/armon/go-metrics"
 	"github.com/hashicorp/consul/lib"
@@ -58,21 +59,7 @@ type Cache struct {
 	typesLock sync.RWMutex
 	types     map[string]typeEntry
 
-	// entries contains the actual cache data. Access to entries and
-	// entriesExpiryHeap must be protected by entriesLock.
-	//
-	// entriesExpiryHeap is a heap of *cacheEntry values ordered by
-	// expiry, with the soonest to expire being first in the list (index 0).
-	//
-	// NOTE(mitchellh): The entry map key is currently a string in the format
-	// of "<DC>/<ACL token>/<Request key>" in order to properly partition
-	// requests to different datacenters and ACL tokens. This format has some
-	// big drawbacks: we can't evict by datacenter, ACL token, etc. For an
-	// initial implementation this works and the tests are agnostic to the
-	// internal storage format so changing this should be possible safely.
-	entriesLock       sync.RWMutex
-	entries           map[string]cacheEntry
-	entriesExpiryHeap *expiryHeap
+	entries gcache.Cache
 
 	// stopped is used as an atomic flag to signal that the Cache has been
 	// discarded so background fetches and expiry processing should stop.
@@ -116,29 +103,28 @@ type ResultMeta struct {
 	Index uint64
 }
 
+const CacheMaxSizeDefault = 10e4
+
 // Options are options for the Cache.
 type Options struct {
-	// Nothing currently, reserved.
+	MaxSize int
 }
 
 // New creates a new cache with the given RPC client and reasonable defaults.
 // Further settings can be tweaked on the returned value.
-func New(*Options) *Cache {
-	// Initialize the heap. The buffer of 1 is really important because
-	// its possible for the expiry loop to trigger the heap to update
-	// itself and it'd block forever otherwise.
-	h := &expiryHeap{NotifyCh: make(chan struct{}, 1)}
-	heap.Init(h)
-
-	c := &Cache{
-		types:             make(map[string]typeEntry),
-		entries:           make(map[string]cacheEntry),
-		entriesExpiryHeap: h,
-		stopCh:            make(chan struct{}),
+func New(opt *Options) *Cache {
+	if opt == nil {
+		opt = &Options{}
+	}
+	if opt.MaxSize == 0 {
+		opt.MaxSize = CacheMaxSizeDefault
 	}
 
-	// Start the expiry watcher
-	go c.runExpiryLoop()
+	c := &Cache{
+		types:   make(map[string]typeEntry),
+		entries: gcache.New(opt.MaxSize).LFU().Build(),
+		stopCh:  make(chan struct{}),
+	}
 
 	return c
 }
@@ -248,9 +234,10 @@ RETRY_GET:
 	}
 
 	// Get the current value
-	c.entriesLock.RLock()
-	entry, ok := c.entries[key]
-	c.entriesLock.RUnlock()
+	entry, ok, err := c.getEntry(key)
+	if err != nil {
+		return nil, ResultMeta{}, err
+	}
 
 	// Check if we have a hit
 	cacheHit := ok && entry.Valid
@@ -301,11 +288,7 @@ RETRY_GET:
 			}
 		}
 
-		// Touch the expiration and fix the heap.
-		c.entriesLock.Lock()
-		entry.Expiry.Reset()
-		c.entriesExpiryHeap.Fix(entry.Expiry)
-		c.entriesLock.Unlock()
+		c.entries.SetWithExpire(key, entry, entry.TTL)
 
 		// We purposely do not return an error here since the cache only works with
 		// fetching values that either have a value or have an error, but not both.
@@ -394,9 +377,10 @@ func (c *Cache) fetch(t, key string, r Request, allowNew bool, attempt uint) (<-
 	}
 
 	// We acquire a write lock because we may have to set Fetching to true.
-	c.entriesLock.Lock()
-	defer c.entriesLock.Unlock()
-	entry, ok := c.entries[key]
+	entry, ok, err := c.getEntry(key)
+	if err != nil {
+		return nil, err
+	}
 
 	// If we aren't allowing new values and we don't have an existing value,
 	// return immediately. We return an immediately-closed channel so nothing
@@ -423,8 +407,8 @@ func (c *Cache) fetch(t, key string, r Request, allowNew bool, attempt uint) (<-
 	// identical calls to fetch will return the same waiter rather than
 	// perform multiple fetches.
 	entry.Fetching = true
-	c.entries[key] = entry
-	metrics.SetGauge([]string{"consul", "cache", "entries_count"}, float32(len(c.entries)))
+	c.entries.SetWithExpire(key, entry, tEntry.Opts.LastGetTTL)
+	metrics.SetGauge([]string{"consul", "cache", "entries_count"}, float32(c.entries.Len()))
 
 	// The actual Fetch must be performed in a goroutine.
 	go func() {
@@ -439,14 +423,11 @@ func (c *Cache) fetch(t, key string, r Request, allowNew bool, attempt uint) (<-
 		if tEntry.Opts.Refresh && entry.Index > 0 &&
 			tEntry.Opts.RefreshTimeout > (31*time.Second) {
 			connectedTimer = time.AfterFunc(31*time.Second, func() {
-				c.entriesLock.Lock()
-				defer c.entriesLock.Unlock()
-				entry, ok := c.entries[key]
+				entry, ok, _ := c.getEntry(key)
 				if !ok || entry.RefreshLostContact.IsZero() {
 					return
 				}
 				entry.RefreshLostContact = time.Time{}
-				c.entries[key] = entry
 			})
 		}
 
@@ -561,23 +542,14 @@ func (c *Cache) fetch(t, key string, r Request, allowNew bool, attempt uint) (<-
 		// Create a new waiter that will be used for the next fetch.
 		newEntry.Waiter = make(chan struct{})
 
-		// Set our entry
-		c.entriesLock.Lock()
-
 		// If this is a new entry (not in the heap yet), then setup the
 		// initial expiry information and insert. If we're already in
 		// the heap we do nothing since we're reusing the same entry.
-		if newEntry.Expiry == nil || newEntry.Expiry.HeapIndex == -1 {
-			newEntry.Expiry = &cacheEntryExpiry{
-				Key: key,
-				TTL: tEntry.Opts.LastGetTTL,
-			}
-			newEntry.Expiry.Reset()
-			heap.Push(c.entriesExpiryHeap, newEntry.Expiry)
+		if newEntry.TTL == 0 {
+			newEntry.TTL = tEntry.Opts.LastGetTTL
 		}
 
-		c.entries[key] = newEntry
-		c.entriesLock.Unlock()
+		c.entries.SetWithExpire(key, newEntry, newEntry.TTL)
 
 		// Trigger the old waiter
 		close(entry.Waiter)
@@ -659,52 +631,16 @@ func (c *Cache) refresh(opts *RegisterOptions, attempt uint, t string, key strin
 	c.fetch(t, key, r, false, attempt)
 }
 
-// runExpiryLoop is a blocking function that watches the expiration
-// heap and invalidates entries that have expired.
-func (c *Cache) runExpiryLoop() {
-	var expiryTimer *time.Timer
-	for {
-		// If we have a previous timer, stop it.
-		if expiryTimer != nil {
-			expiryTimer.Stop()
-		}
+func (c *Cache) getEntry(key string) (cacheEntry, bool, error) {
+	entryIf, err := c.entries.Get(key)
 
-		// Get the entry expiring soonest
-		var entry *cacheEntryExpiry
-		var expiryCh <-chan time.Time
-		c.entriesLock.RLock()
-		if len(c.entriesExpiryHeap.Entries) > 0 {
-			entry = c.entriesExpiryHeap.Entries[0]
-			expiryTimer = time.NewTimer(entry.Expires.Sub(time.Now()))
-			expiryCh = expiryTimer.C
-		}
-		c.entriesLock.RUnlock()
-
-		select {
-		case <-c.stopCh:
-			return
-		case <-c.entriesExpiryHeap.NotifyCh:
-			// Entries changed, so the heap may have changed. Restart loop.
-
-		case <-expiryCh:
-			c.entriesLock.Lock()
-
-			// Entry expired! Remove it.
-			delete(c.entries, entry.Key)
-			heap.Remove(c.entriesExpiryHeap, entry.HeapIndex)
-
-			// This is subtle but important: if we race and simultaneously
-			// evict and fetch a new value, then we set this to -1 to
-			// have it treated as a new value so that the TTL is extended.
-			entry.HeapIndex = -1
-
-			// Set some metrics
-			metrics.IncrCounter([]string{"consul", "cache", "evict_expired"}, 1)
-			metrics.SetGauge([]string{"consul", "cache", "entries_count"}, float32(len(c.entries)))
-
-			c.entriesLock.Unlock()
-		}
+	if err != nil && err != gcache.KeyNotFoundError {
+		return cacheEntry{}, false, err
+	} else if err == gcache.KeyNotFoundError {
+		return cacheEntry{}, false, nil
 	}
+
+	return entryIf.(cacheEntry), true, nil
 }
 
 // Close stops any background work and frees all resources for the cache.
