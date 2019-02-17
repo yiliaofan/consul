@@ -264,8 +264,8 @@ func (m *Manager) Run() {
 
 	// Register for proxy catalog change notifications
 	notifyCh := make(chan struct{}, 1)
-	m.State.NotifyProxy(notifyCh)
-	defer m.State.StopNotifyProxy(notifyCh)
+	m.State.NotifyAnyProxy(notifyCh)
+	defer m.State.StopNotifyAnyProxy(notifyCh)
 
 	// Start the timer for snapshots. We don't use a ticker because disk
 	// IO can be slow and we don't want overlapping notifications. So we only
@@ -339,7 +339,9 @@ func (m *Manager) sync() {
 	}
 
 	// Get the current set of proxies
-	state := m.State.Proxies()
+	tx := m.State.ReadTx()
+	defer tx.Done()
+	state := tx.Proxies()
 
 	// Go through our existing proxies that we're currently managing to
 	// determine if they're still in the state or not. If they're in the

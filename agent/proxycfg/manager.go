@@ -107,8 +107,8 @@ func (m *Manager) Run() error {
 	}
 
 	// Register for notifications about state changes
-	m.State.Notify(stateCh)
-	defer m.State.StopNotify(stateCh)
+	m.State.NotifyAll(stateCh)
+	defer m.State.StopNotifyAll(stateCh)
 
 	for {
 		m.syncState()
@@ -129,7 +129,9 @@ func (m *Manager) syncState() {
 	defer m.mu.Unlock()
 
 	// Traverse the local state and ensure all proxy services are registered
-	services := m.State.Services()
+	tx := m.State.ReadTx()
+	defer tx.Done()
+	services := tx.Services()
 	for svcID, svc := range services {
 		if svc.Kind != structs.ServiceKindConnectProxy {
 			continue
@@ -142,7 +144,7 @@ func (m *Manager) syncState() {
 		// proxy service. Sidecar Service and managed proxies in the interim can
 		// do that, but we should validate more generally that that is always
 		// true.
-		err := m.ensureProxyServiceLocked(svc, m.State.ServiceToken(svcID))
+		err := m.ensureProxyServiceLocked(svc, tx.ServiceToken(svcID))
 		if err != nil {
 			m.Logger.Printf("[ERR] failed to watch proxy service %s: %s", svc.ID,
 				err)

@@ -292,24 +292,6 @@ func New(c *config.RuntimeConfig) (*Agent, error) {
 	return a, nil
 }
 
-func LocalConfig(cfg *config.RuntimeConfig) local.Config {
-	lc := local.Config{
-		AdvertiseAddr:       cfg.AdvertiseAddrLAN.String(),
-		CheckUpdateInterval: cfg.CheckUpdateInterval,
-		Datacenter:          cfg.Datacenter,
-		DiscardCheckOutput:  cfg.DiscardCheckOutput,
-		NodeID:              cfg.NodeID,
-		NodeName:            cfg.NodeName,
-		TaggedAddresses:     map[string]string{},
-		ProxyBindMinPort:    cfg.ConnectProxyBindMinPort,
-		ProxyBindMaxPort:    cfg.ConnectProxyBindMaxPort,
-	}
-	for k, v := range cfg.TaggedAddresses {
-		lc.TaggedAddresses[k] = v
-	}
-	return lc
-}
-
 func (a *Agent) setupProxyManager() error {
 	acfg, err := a.config.APIConfig(true)
 	if err != nil {
@@ -363,7 +345,7 @@ func (a *Agent) Start() error {
 	}
 
 	// create the local state
-	a.State = local.NewState(LocalConfig(c), a.logger, a.tokens)
+	a.State = local.New(c, a.delegate, a.tokens, a.logger)
 
 	// create the state synchronization manager which performs
 	// regular and on-demand state synchronizations (anti-entropy).
