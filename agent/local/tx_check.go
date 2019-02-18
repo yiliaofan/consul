@@ -38,22 +38,22 @@ func (n checkNotifier) RemoveAliasCheck(checkID types.CheckID, srcServiceID stri
 func (n checkNotifier) Checks() map[types.CheckID]*structs.HealthCheck {
 	tx := n.m.ReadTx()
 	defer tx.Done()
-	return tx.Checks()
-}
 
-func (t *ReadTx) Check(id types.CheckID) *structs.HealthCheck {
-	state, ok := t.state.checks[id]
-	if !ok {
-		return nil
-	}
-
-	return state.Check
-}
-
-func (t *ReadTx) Checks() map[types.CheckID]*structs.HealthCheck {
 	m := make(map[types.CheckID]*structs.HealthCheck)
-	for id, c := range t.state.checks {
+	for id, c := range tx.state.checks {
 		m[id] = c.Check
+	}
+	return m
+}
+
+func (t *ReadTx) Check(id types.CheckID) *CheckState {
+	return t.state.checks[id]
+}
+
+func (t *ReadTx) Checks() map[types.CheckID]*CheckState {
+	m := make(map[types.CheckID]*CheckState)
+	for id, c := range t.state.checks {
+		m[id] = c
 	}
 	return m
 }
@@ -169,9 +169,11 @@ func (t *WriteTx) AddCheck(check *structs.HealthCheck, chkType *structs.CheckTyp
 	existing := t.Check(check.CheckID)
 	defer func() {
 		if existing != nil {
-			t.UpdateCheck(check.CheckID, existing.Status, existing.Output)
+			t.UpdateCheck(check.CheckID, existing.Check.Status, existing.Check.Output)
 		}
 	}()
+
+	var reapAfter time.Duration
 
 	// Check if already registered
 	if chkType != nil {
@@ -355,9 +357,7 @@ func (t *WriteTx) AddCheck(check *structs.HealthCheck, chkType *structs.CheckTyp
 				t.manager.logger.Println(fmt.Sprintf("[WARN] agent: check '%s' has deregister interval below minimum of %v",
 					check.CheckID, t.manager.config.CheckDeregisterIntervalMin))
 			}
-			t.state.checkReapAfter[check.CheckID] = timeout
-		} else {
-			delete(t.state.checkReapAfter, check.CheckID)
+			reapAfter = timeout
 		}
 
 		t.state.checkTasks[check.CheckID] = checkTask
@@ -365,10 +365,35 @@ func (t *WriteTx) AddCheck(check *structs.HealthCheck, chkType *structs.CheckTyp
 	}
 
 	t.state.checks[check.CheckID] = &CheckState{
-		Check: check,
+		Check:     check,
+		ReapAfter: reapAfter,
+		Token:     token,
 	}
 
 	return nil
+}
+
+func (t *WriteTx) RemoveCheck(id types.CheckID) (err error) {
+	defer func() {
+		if err != nil {
+			t.Discard()
+			return
+		}
+
+		t.notifies = append(t.notifies, watchKeyCheck(id))
+	}()
+
+	c := t.state.checks[id]
+	if c == nil || c.Deleted {
+		err = fmt.Errorf("Check %q does not exist", id)
+		return
+	}
+
+	c.Deleted = true
+	t.state.checkTasks[id].Stop()
+	delete(t.state.checkTasks, id)
+
+	return
 }
 
 func (t *WriteTx) AddAliasCheck(checkID types.CheckID, srcServiceID string, notifyCh chan<- struct{}) error {

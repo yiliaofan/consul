@@ -38,7 +38,6 @@ import (
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/ipaddr"
 	"github.com/hashicorp/consul/lib"
-	"github.com/hashicorp/consul/lib/file"
 	"github.com/hashicorp/consul/logger"
 	"github.com/hashicorp/consul/types"
 	"github.com/hashicorp/consul/watch"
@@ -387,7 +386,6 @@ func (a *Agent) Start() error {
 	// via callbacks. After several attempts this was easier than using
 	// channels since the event notification needs to be non-blocking
 	// and that should be hidden in the state syncer implementation.
-	a.State.Delegate = a.delegate
 	a.State.TriggerSyncChanges = a.sync.SyncChanges.Trigger
 
 	// Register the cache. We do this much later so the delegate is
@@ -1700,8 +1698,14 @@ OUTER:
 
 // reapServicesInternal does a single pass, looking for services to reap.
 func (a *Agent) reapServicesInternal() {
+	tx := a.State.WriteTx()
+
 	reaped := make(map[string]bool)
-	for checkID, cs := range a.State.CriticalCheckStates() {
+	for checkID, cs := range tx.Checks() {
+		if cs.Check.Status != api.HealthCritical {
+			continue
+		}
+
 		serviceID := cs.Check.ServiceID
 
 		// There's nothing to do if there's no service.
@@ -1715,15 +1719,9 @@ func (a *Agent) reapServicesInternal() {
 			continue
 		}
 
-		// See if there's a timeout.
-		// todo(fs): this looks fishy... why is there another data structure in the agent with its own lock?
-		a.checkLock.Lock()
-		timeout := a.checkReapAfter[checkID]
-		a.checkLock.Unlock()
-
 		// Reap, if necessary. We keep track of which service
 		// this is so that we won't try to remove it again.
-		if timeout > 0 && cs.CriticalFor() > timeout {
+		if cs.ReapAfter > 0 && time.Since(cs.CriticalTime) > cs.ReapAfter {
 			reaped[serviceID] = true
 			a.RemoveService(serviceID, true)
 			a.logger.Printf("[INFO] agent: Check %q for service %q has been critical for too long; deregistered service",
@@ -1747,108 +1745,10 @@ func (a *Agent) reapServices() {
 
 }
 
-// persistedService is used to wrap a service definition and bundle it
-// with an ACL token so we can restore both at a later agent start.
-type persistedService struct {
-	Token   string
-	Service *structs.NodeService
-}
-
-// persistService saves a service definition to a JSON file in the data dir
-func (a *Agent) persistService(service *structs.NodeService) error {
-	svcPath := filepath.Join(a.config.DataDir, servicesDir, stringHash(service.ID))
-
-	wrapped := persistedService{
-		Token:   a.State.ServiceToken(service.ID),
-		Service: service,
-	}
-	encoded, err := json.Marshal(wrapped)
-	if err != nil {
-		return err
-	}
-
-	return file.WriteAtomic(svcPath, encoded)
-}
-
-// purgeService removes a persisted service definition file from the data dir
-func (a *Agent) purgeService(serviceID string) error {
-	svcPath := filepath.Join(a.config.DataDir, servicesDir, stringHash(serviceID))
-	if _, err := os.Stat(svcPath); err == nil {
-		return os.Remove(svcPath)
-	}
-	return nil
-}
-
-// persistedProxy is used to wrap a proxy definition and bundle it with an Proxy
-// token so we can continue to authenticate the running proxy after a restart.
-type persistedProxy struct {
-	ProxyToken string
-	Proxy      *structs.ConnectManagedProxy
-
-	// Set to true when the proxy information originated from the agents configuration
-	// as opposed to API registration.
-	FromFile bool
-}
-
-// persistProxy saves a proxy definition to a JSON file in the data dir
-func (a *Agent) persistProxy(proxy *local.ManagedProxy, FromFile bool) error {
-	proxyPath := filepath.Join(a.config.DataDir, proxyDir,
-		stringHash(proxy.Proxy.ProxyService.ID))
-
-	wrapped := persistedProxy{
-		ProxyToken: proxy.ProxyToken,
-		Proxy:      proxy.Proxy,
-		FromFile:   FromFile,
-	}
-	encoded, err := json.Marshal(wrapped)
-	if err != nil {
-		return err
-	}
-
-	return file.WriteAtomic(proxyPath, encoded)
-}
-
-// purgeProxy removes a persisted proxy definition file from the data dir
-func (a *Agent) purgeProxy(proxyID string) error {
-	proxyPath := filepath.Join(a.config.DataDir, proxyDir, stringHash(proxyID))
-	if _, err := os.Stat(proxyPath); err == nil {
-		return os.Remove(proxyPath)
-	}
-	return nil
-}
-
-// persistCheck saves a check definition to the local agent's state directory
-func (a *Agent) persistCheck(check *structs.HealthCheck, chkType *structs.CheckType) error {
-	checkPath := filepath.Join(a.config.DataDir, checksDir, checkIDHash(check.CheckID))
-
-	// Create the persisted check
-	wrapped := persistedCheck{
-		Check:   check,
-		ChkType: chkType,
-		Token:   a.State.CheckToken(check.CheckID),
-	}
-
-	encoded, err := json.Marshal(wrapped)
-	if err != nil {
-		return err
-	}
-
-	return file.WriteAtomic(checkPath, encoded)
-}
-
-// purgeCheck removes a persisted check definition file from the data dir
-func (a *Agent) purgeCheck(checkID types.CheckID) error {
-	checkPath := filepath.Join(a.config.DataDir, checksDir, checkIDHash(checkID))
-	if _, err := os.Stat(checkPath); err == nil {
-		return os.Remove(checkPath)
-	}
-	return nil
-}
-
 // AddService is used to add a service entry.
 // This entry is persistent and the agent will make a best effort to
 // ensure it is registered
-func (a *Agent) AddService(service *structs.NodeService, chkTypes []*structs.CheckType, persist bool, token string, source configSource) error {
+func (a *Agent) AddService(tx *local.WriteTx, service *structs.NodeService, chkTypes []*structs.CheckType, persist bool, token string, source configSource) error {
 	if service.Service == "" {
 		return fmt.Errorf("Service name missing")
 	}
@@ -1891,18 +1791,9 @@ func (a *Agent) AddService(service *structs.NodeService, chkTypes []*structs.Che
 		}
 	}
 
-	// Pause the service syncs during modification
-	a.PauseSync()
-	defer a.ResumeSync()
-
 	// Add the service
-	a.State.AddService(service, token)
-
-	// Persist the service to a file
-	if persist && a.config.DataDir != "" {
-		if err := a.persistService(service); err != nil {
-			return err
-		}
+	if err := tx.AddService(service, token); err != nil {
+		return err
 	}
 
 	// Create an associated health check
@@ -1931,7 +1822,7 @@ func (a *Agent) AddService(service *structs.NodeService, chkTypes []*structs.Che
 		if chkType.Status != "" {
 			check.Status = chkType.Status
 		}
-		if err := a.AddCheck(check, chkType, persist, token, source); err != nil {
+		if err := a.AddCheck(tx, check, chkType, persist, token, source); err != nil {
 			return err
 		}
 	}
@@ -1941,37 +1832,30 @@ func (a *Agent) AddService(service *structs.NodeService, chkTypes []*structs.Che
 
 // RemoveService is used to remove a service entry.
 // The agent will make a best effort to ensure it is deregistered
-func (a *Agent) RemoveService(serviceID string, persist bool) error {
+func (a *Agent) RemoveService(tx *local.WriteTx, serviceID string, persist bool) error {
 	// Validate ServiceID
 	if serviceID == "" {
 		return fmt.Errorf("ServiceID missing")
 	}
 
 	// Remove service immediately
-	if err := a.State.RemoveService(serviceID); err != nil {
+	if err := tx.RemoveService(serviceID); err != nil {
 		a.logger.Printf("[WARN] agent: Failed to deregister service %q: %s", serviceID, err)
 		return nil
 	}
 
-	// Remove the service from the data dir
-	if persist {
-		if err := a.purgeService(serviceID); err != nil {
-			return err
-		}
-	}
-
 	// Deregister any associated health checks
-	for checkID, check := range a.State.Checks() {
-		if check.ServiceID != serviceID {
+	for checkID, check := range tx.Checks() {
+		if check.Check.ServiceID != serviceID {
 			continue
 		}
-		if err := a.RemoveCheck(checkID, persist); err != nil {
+		if err := a.RemoveCheck(tx, checkID, persist); err != nil {
 			return err
 		}
 	}
 
 	// Remove the associated managed proxy if it exists
-	for proxyID, p := range a.State.Proxies() {
+	for proxyID, p := range tx.Proxies() {
 		if p.Proxy.TargetServiceID == serviceID {
 			if err := a.RemoveProxy(proxyID, true); err != nil {
 				return err
@@ -1982,12 +1866,12 @@ func (a *Agent) RemoveService(serviceID string, persist bool) error {
 	a.logger.Printf("[DEBUG] agent: removed service %q", serviceID)
 
 	// If any Sidecar services exist for the removed service ID, remove them too.
-	if sidecar := a.State.Service(a.sidecarServiceID(serviceID)); sidecar != nil {
+	if sidecar := tx.Service(a.sidecarServiceID(serviceID)); sidecar != nil {
 		// Double check that it's not just an ID collision and we actually added
 		// this from a sidecar.
 		if sidecar.LocallyRegisteredAsSidecar {
 			// Remove it!
-			err := a.RemoveService(a.sidecarServiceID(serviceID), persist)
+			err := a.RemoveService(tx, a.sidecarServiceID(serviceID), persist)
 			if err != nil {
 				return err
 			}
@@ -2001,7 +1885,7 @@ func (a *Agent) RemoveService(serviceID string, persist bool) error {
 // This entry is persistent and the agent will make a best effort to
 // ensure it is registered. The Check may include a CheckType which
 // is used to automatically update the check status
-func (a *Agent) AddCheck(check *structs.HealthCheck, chkType *structs.CheckType, persist bool, token string, source configSource) error {
+func (a *Agent) AddCheck(tx *local.WriteTx, check *structs.HealthCheck, chkType *structs.CheckType, persist bool, token string, source configSource) error {
 	if check.CheckID == "" {
 		return fmt.Errorf("CheckID missing")
 	}
@@ -2022,254 +1906,7 @@ func (a *Agent) AddCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 		}
 	}
 
-	if check.ServiceID != "" {
-		s := a.State.Service(check.ServiceID)
-		if s == nil {
-			return fmt.Errorf("ServiceID %q does not exist", check.ServiceID)
-		}
-		check.ServiceName = s.Service
-		check.ServiceTags = s.Tags
-	}
-
-	a.checkLock.Lock()
-	defer a.checkLock.Unlock()
-
-	// snapshot the current state of the health check to avoid potential flapping
-	existing := a.State.Check(check.CheckID)
-	defer func() {
-		if existing != nil {
-			a.State.UpdateCheck(check.CheckID, existing.Status, existing.Output)
-		}
-	}()
-
-	// Check if already registered
-	if chkType != nil {
-		switch {
-
-		case chkType.IsTTL():
-			if existing, ok := a.checkTTLs[check.CheckID]; ok {
-				existing.Stop()
-				delete(a.checkTTLs, check.CheckID)
-			}
-
-			ttl := &checks.CheckTTL{
-				Notify:  a.State,
-				CheckID: check.CheckID,
-				TTL:     chkType.TTL,
-				Logger:  a.logger,
-			}
-
-			// Restore persisted state, if any
-			if err := a.loadCheckState(check); err != nil {
-				a.logger.Printf("[WARN] agent: failed restoring state for check %q: %s",
-					check.CheckID, err)
-			}
-
-			ttl.Start()
-			a.checkTTLs[check.CheckID] = ttl
-
-		case chkType.IsHTTP():
-			if existing, ok := a.checkHTTPs[check.CheckID]; ok {
-				existing.Stop()
-				delete(a.checkHTTPs, check.CheckID)
-			}
-			if chkType.Interval < checks.MinInterval {
-				a.logger.Println(fmt.Sprintf("[WARN] agent: check '%s' has interval below minimum of %v",
-					check.CheckID, checks.MinInterval))
-				chkType.Interval = checks.MinInterval
-			}
-
-			tlsClientConfig, err := a.setupTLSClientConfig(chkType.TLSSkipVerify)
-			if err != nil {
-				return fmt.Errorf("Failed to set up TLS: %v", err)
-			}
-
-			http := &checks.CheckHTTP{
-				Notify:          a.State,
-				CheckID:         check.CheckID,
-				HTTP:            chkType.HTTP,
-				Header:          chkType.Header,
-				Method:          chkType.Method,
-				Interval:        chkType.Interval,
-				Timeout:         chkType.Timeout,
-				Logger:          a.logger,
-				TLSClientConfig: tlsClientConfig,
-			}
-			http.Start()
-			a.checkHTTPs[check.CheckID] = http
-
-		case chkType.IsTCP():
-			if existing, ok := a.checkTCPs[check.CheckID]; ok {
-				existing.Stop()
-				delete(a.checkTCPs, check.CheckID)
-			}
-			if chkType.Interval < checks.MinInterval {
-				a.logger.Println(fmt.Sprintf("[WARN] agent: check '%s' has interval below minimum of %v",
-					check.CheckID, checks.MinInterval))
-				chkType.Interval = checks.MinInterval
-			}
-
-			tcp := &checks.CheckTCP{
-				Notify:   a.State,
-				CheckID:  check.CheckID,
-				TCP:      chkType.TCP,
-				Interval: chkType.Interval,
-				Timeout:  chkType.Timeout,
-				Logger:   a.logger,
-			}
-			tcp.Start()
-			a.checkTCPs[check.CheckID] = tcp
-
-		case chkType.IsGRPC():
-			if existing, ok := a.checkGRPCs[check.CheckID]; ok {
-				existing.Stop()
-				delete(a.checkGRPCs, check.CheckID)
-			}
-			if chkType.Interval < checks.MinInterval {
-				a.logger.Println(fmt.Sprintf("[WARN] agent: check '%s' has interval below minimum of %v",
-					check.CheckID, checks.MinInterval))
-				chkType.Interval = checks.MinInterval
-			}
-
-			var tlsClientConfig *tls.Config
-			if chkType.GRPCUseTLS {
-				var err error
-				tlsClientConfig, err = a.setupTLSClientConfig(chkType.TLSSkipVerify)
-				if err != nil {
-					return fmt.Errorf("Failed to set up TLS: %v", err)
-				}
-			}
-
-			grpc := &checks.CheckGRPC{
-				Notify:          a.State,
-				CheckID:         check.CheckID,
-				GRPC:            chkType.GRPC,
-				Interval:        chkType.Interval,
-				Timeout:         chkType.Timeout,
-				Logger:          a.logger,
-				TLSClientConfig: tlsClientConfig,
-			}
-			grpc.Start()
-			a.checkGRPCs[check.CheckID] = grpc
-
-		case chkType.IsDocker():
-			if existing, ok := a.checkDockers[check.CheckID]; ok {
-				existing.Stop()
-				delete(a.checkDockers, check.CheckID)
-			}
-			if chkType.Interval < checks.MinInterval {
-				a.logger.Println(fmt.Sprintf("[WARN] agent: check '%s' has interval below minimum of %v",
-					check.CheckID, checks.MinInterval))
-				chkType.Interval = checks.MinInterval
-			}
-
-			if a.dockerClient == nil {
-				dc, err := checks.NewDockerClient(os.Getenv("DOCKER_HOST"), checks.BufSize)
-				if err != nil {
-					a.logger.Printf("[ERR] agent: error creating docker client: %s", err)
-					return err
-				}
-				a.logger.Printf("[DEBUG] agent: created docker client for %s", dc.Host())
-				a.dockerClient = dc
-			}
-
-			dockerCheck := &checks.CheckDocker{
-				Notify:            a.State,
-				CheckID:           check.CheckID,
-				DockerContainerID: chkType.DockerContainerID,
-				Shell:             chkType.Shell,
-				ScriptArgs:        chkType.ScriptArgs,
-				Interval:          chkType.Interval,
-				Logger:            a.logger,
-				Client:            a.dockerClient,
-			}
-			if prev := a.checkDockers[check.CheckID]; prev != nil {
-				prev.Stop()
-			}
-			dockerCheck.Start()
-			a.checkDockers[check.CheckID] = dockerCheck
-
-		case chkType.IsMonitor():
-			if existing, ok := a.checkMonitors[check.CheckID]; ok {
-				existing.Stop()
-				delete(a.checkMonitors, check.CheckID)
-			}
-			if chkType.Interval < checks.MinInterval {
-				a.logger.Printf("[WARN] agent: check '%s' has interval below minimum of %v",
-					check.CheckID, checks.MinInterval)
-				chkType.Interval = checks.MinInterval
-			}
-
-			monitor := &checks.CheckMonitor{
-				Notify:     a.State,
-				CheckID:    check.CheckID,
-				ScriptArgs: chkType.ScriptArgs,
-				Interval:   chkType.Interval,
-				Timeout:    chkType.Timeout,
-				Logger:     a.logger,
-			}
-			monitor.Start()
-			a.checkMonitors[check.CheckID] = monitor
-
-		case chkType.IsAlias():
-			if existing, ok := a.checkAliases[check.CheckID]; ok {
-				existing.Stop()
-				delete(a.checkAliases, check.CheckID)
-			}
-
-			var rpcReq structs.NodeSpecificRequest
-			rpcReq.Datacenter = a.config.Datacenter
-
-			// The token to set is really important. The behavior below follows
-			// the same behavior as anti-entropy: we use the user-specified token
-			// if set (either on the service or check definition), otherwise
-			// we use the "UserToken" on the agent. This is tested.
-			rpcReq.Token = a.tokens.UserToken()
-			if token != "" {
-				rpcReq.Token = token
-			}
-
-			chkImpl := &checks.CheckAlias{
-				Notify:    a.State,
-				RPC:       a.delegate,
-				RPCReq:    rpcReq,
-				CheckID:   check.CheckID,
-				Node:      chkType.AliasNode,
-				ServiceID: chkType.AliasService,
-			}
-			chkImpl.Start()
-			a.checkAliases[check.CheckID] = chkImpl
-
-		default:
-			return fmt.Errorf("Check type is not valid")
-		}
-
-		if chkType.DeregisterCriticalServiceAfter > 0 {
-			timeout := chkType.DeregisterCriticalServiceAfter
-			if timeout < a.config.CheckDeregisterIntervalMin {
-				timeout = a.config.CheckDeregisterIntervalMin
-				a.logger.Println(fmt.Sprintf("[WARN] agent: check '%s' has deregister interval below minimum of %v",
-					check.CheckID, a.config.CheckDeregisterIntervalMin))
-			}
-			a.checkReapAfter[check.CheckID] = timeout
-		} else {
-			delete(a.checkReapAfter, check.CheckID)
-		}
-	}
-
-	// Add to the local state for anti-entropy
-	err := a.State.AddCheck(check, token)
-	if err != nil {
-		a.cancelCheckMonitors(check.CheckID)
-		return err
-	}
-
-	// Persist the check
-	if persist && a.config.DataDir != "" {
-		return a.persistCheck(check, chkType)
-	}
-
-	return nil
+	return tx.AddCheck(check, chkType, token)
 }
 
 func (a *Agent) setupTLSClientConfig(skipVerify bool) (tlsClientConfig *tls.Config, err error) {
@@ -2291,28 +1928,17 @@ func (a *Agent) setupTLSClientConfig(skipVerify bool) (tlsClientConfig *tls.Conf
 
 // RemoveCheck is used to remove a health check.
 // The agent will make a best effort to ensure it is deregistered
-func (a *Agent) RemoveCheck(checkID types.CheckID, persist bool) error {
+func (a *Agent) RemoveCheck(tx *local.WriteTx, checkID types.CheckID, persist bool) error {
 	// Validate CheckID
 	if checkID == "" {
 		return fmt.Errorf("CheckID missing")
 	}
 
 	// Add to the local state for anti-entropy
-	a.State.RemoveCheck(checkID)
-
-	a.checkLock.Lock()
-	defer a.checkLock.Unlock()
-
-	a.cancelCheckMonitors(checkID)
-
-	if persist {
-		if err := a.purgeCheck(checkID); err != nil {
-			return err
-		}
-		if err := a.purgeCheckState(checkID); err != nil {
-			return err
-		}
+	if err := tx.RemoveCheck(checkID); err != nil {
+		return err
 	}
+
 	a.logger.Printf("[DEBUG] agent: removed check %q", checkID)
 	return nil
 }
@@ -2661,35 +2287,6 @@ func (a *Agent) verifyProxyToken(token, targetService,
 	}
 
 	return token, false, nil
-}
-
-func (a *Agent) cancelCheckMonitors(checkID types.CheckID) {
-	// Stop any monitors
-	delete(a.checkReapAfter, checkID)
-	if check, ok := a.checkMonitors[checkID]; ok {
-		check.Stop()
-		delete(a.checkMonitors, checkID)
-	}
-	if check, ok := a.checkHTTPs[checkID]; ok {
-		check.Stop()
-		delete(a.checkHTTPs, checkID)
-	}
-	if check, ok := a.checkTCPs[checkID]; ok {
-		check.Stop()
-		delete(a.checkTCPs, checkID)
-	}
-	if check, ok := a.checkGRPCs[checkID]; ok {
-		check.Stop()
-		delete(a.checkGRPCs, checkID)
-	}
-	if check, ok := a.checkTTLs[checkID]; ok {
-		check.Stop()
-		delete(a.checkTTLs, checkID)
-	}
-	if check, ok := a.checkDockers[checkID]; ok {
-		check.Stop()
-		delete(a.checkDockers, checkID)
-	}
 }
 
 // updateTTLCheck is used to update the status of a TTL check via the Agent API.

@@ -36,6 +36,8 @@ type CheckState struct {
 	// record on the server.
 	Token string
 
+	ReapAfter time.Duration
+
 	// CriticalTime is the last time the health check status went
 	// from non-critical to critical. When the health check is not
 	// in critical state the value is the zero value.
@@ -116,10 +118,6 @@ type StateFrame struct {
 	// are sent a message each time a proxy changes via Add or RemoveProxy.
 	managedProxies map[string]*ManagedProxy
 
-	// checkReapAfter maps the check ID to a timeout after which we should
-	// reap its associated service
-	checkReapAfter map[types.CheckID]time.Duration
-
 	// metadata tracks the node metadata fields
 	metadata map[string]string
 }
@@ -131,7 +129,6 @@ func newFrame() *StateFrame {
 		checkTasks:     make(map[types.CheckID]checkTask),
 		checkAliases:   make(map[string]map[types.CheckID]chan<- struct{}),
 		managedProxies: make(map[string]*ManagedProxy),
-		checkReapAfter: make(map[types.CheckID]time.Duration),
 		metadata:       make(map[string]string),
 	}
 }
@@ -157,10 +154,6 @@ func (s *StateFrame) copy() *StateFrame {
 
 	for k, v := range s.managedProxies {
 		new.managedProxies[k] = v
-	}
-
-	for k, v := range s.checkReapAfter {
-		new.checkReapAfter[k] = v
 	}
 
 	for k, v := range s.metadata {

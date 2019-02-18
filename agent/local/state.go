@@ -62,6 +62,16 @@ func (m *State) WriteTx() *WriteTx {
 	}
 }
 
+func (m *State) SyncChanges() error {
+	// TODO
+	return nil
+}
+
+func (m *State) SyncFull() error {
+	// TODO
+	return nil
+}
+
 func (m *State) NotifyAll(c chan struct{}) {
 	m.watches.Notify(watchKeyAll{}, c)
 }
