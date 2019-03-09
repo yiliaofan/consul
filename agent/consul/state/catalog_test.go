@@ -3453,3 +3453,29 @@ func TestStateStore_NodeInfo_NodeDump(t *testing.T) {
 		t.Fatalf("bad")
 	}
 }
+
+func TestStateStore_ServiceIdxUpdateOnNodeUpdate(t *testing.T) {
+	s := testStateStore(t)
+
+	// Create a service on a node
+	err := s.EnsureNode(10, &structs.Node{Node: "node", Address: "127.0.0.1"})
+	require.Nil(t, err)
+	err = s.EnsureService(12, "node", &structs.NodeService{ID: "srv", Service: "srv", Tags: nil, Address: "", Port: 5000})
+	require.Nil(t, err)
+
+	// Store the current service index
+	ws := memdb.NewWatchSet()
+	lastIdx, _, err := s.ServiceNodes(ws, "srv")
+	require.Nil(t, err)
+
+	// Update the node with some meta
+	err = s.EnsureNode(14, &structs.Node{Node: "node", Address: "127.0.0.1", Meta: map[string]string{"foo": "bar"}})
+	require.Nil(t, err)
+
+	// Read the new service index
+	ws = memdb.NewWatchSet()
+	newIdx, _, err := s.ServiceNodes(ws, "srv")
+	require.Nil(t, err)
+
+	require.True(t, newIdx > lastIdx)
+}
