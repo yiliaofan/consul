@@ -47,6 +47,27 @@ const (
 	enqueueLimit = 30 * time.Second
 )
 
+type grpcListener struct {
+	conns chan net.Conn
+	addr  net.Addr
+}
+
+func (l *grpcListener) Handle(conn net.Conn) {
+	l.conns <- conn
+}
+
+func (l *grpcListener) Accept() (net.Conn, error) {
+	return <-l.conns, nil
+}
+
+func (l *grpcListener) Addr() net.Addr {
+	return l.addr
+}
+
+func (l *grpcListener) Close() error {
+	return nil
+}
+
 // listen is used to listen for incoming RPC connections
 func (s *Server) listen(listener net.Listener) {
 	for {
@@ -116,6 +137,13 @@ func (s *Server) handleConn(conn net.Conn, isTLS bool) {
 	case pool.RPCSnapshot:
 		s.handleSnapshotConn(conn)
 
+	case pool.RPCGRPC:
+		if !s.config.EnableGRPC {
+			s.logger.Printf("[ERR] consul.rpc: received a GRPC connection but GRPC is disabled on this server")
+			return
+		}
+		s.handleGRPCConn(conn)
+
 	default:
 		if !s.handleEnterpriseRPCConn(typ, conn, isTLS) {
 			s.logger.Printf("[ERR] consul.rpc: unrecognized RPC byte: %v %s", typ, logConn(conn))
@@ -176,6 +204,10 @@ func (s *Server) handleSnapshotConn(conn net.Conn) {
 	}()
 }
 
+func (s *Server) handleGRPCConn(conn net.Conn) {
+	s.GRPCListener.Handle(conn)
+}
+
 // canRetry returns true if the given situation is safe for a retry.
 func canRetry(args interface{}, err error) bool {
 	// No leader errors are always safe to retry since no state could have
@@ -230,8 +262,7 @@ CHECK_LEADER:
 	// Handle the case of a known leader
 	rpcErr := structs.ErrNoLeader
 	if leader != nil {
-		rpcErr = s.connPool.RPC(s.config.Datacenter, leader.Addr,
-			leader.Version, method, leader.UseTLS, args, reply)
+		rpcErr = s.rpcClient.Call(s.config.Datacenter, leader, method, args, reply)
 		if rpcErr != nil && canRetry(info, rpcErr) {
 			goto RETRY
 		}
@@ -289,7 +320,7 @@ func (s *Server) forwardDC(method, dc string, args interface{}, reply interface{
 
 	metrics.IncrCounterWithLabels([]string{"rpc", "cross-dc"}, 1,
 		[]metrics.Label{{Name: "datacenter", Value: dc}})
-	if err := s.connPool.RPC(dc, server.Addr, server.Version, method, server.UseTLS, args, reply); err != nil {
+	if err := s.rpcClient.Call(dc, server, method, args, reply); err != nil {
 		manager.NotifyFailedServer(server)
 		s.logger.Printf("[ERR] consul: RPC failed to server %s in DC %q: %v", server.Addr, dc, err)
 		return err
