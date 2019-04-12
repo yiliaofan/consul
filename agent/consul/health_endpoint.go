@@ -152,7 +152,7 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 	}
 
 	// Determine the function we'll call
-	var f func(memdb.WatchSet, *state.Store, *structs.ServiceSpecificRequest) (uint64, structs.CheckServiceNodes, error)
+	var f func(memdb.WatchSet, *state.Store, *structs.ServiceSpecificRequest) (uint64, []structs.CheckServiceNode, error)
 	switch {
 	case args.Connect:
 		f = h.serviceNodesConnect
@@ -197,7 +197,7 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 			return index, func(index uint64, rawReply interface{}) error {
 				reply := rawReply.(*structs.IndexedCheckServiceNodes)
 				// copy the slice to ensure requests filtering / sorting dont affect each others
-				replyNodes := make(structs.CheckServiceNodes, len(nodes))
+				replyNodes := make([]structs.CheckServiceNode, len(nodes))
 				copy(replyNodes, nodes)
 				reply.Index, reply.Nodes = index, replyNodes
 				return nil
@@ -258,11 +258,11 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 // The serviceNodes* functions below are the various lookup methods that
 // can be used by the ServiceNodes endpoint.
 
-func (h *Health) serviceNodesConnect(ws memdb.WatchSet, s *state.Store, args *structs.ServiceSpecificRequest) (uint64, structs.CheckServiceNodes, error) {
+func (h *Health) serviceNodesConnect(ws memdb.WatchSet, s *state.Store, args *structs.ServiceSpecificRequest) (uint64, []structs.CheckServiceNode, error) {
 	return s.CheckConnectServiceNodes(ws, args.ServiceName)
 }
 
-func (h *Health) serviceNodesTagFilter(ws memdb.WatchSet, s *state.Store, args *structs.ServiceSpecificRequest) (uint64, structs.CheckServiceNodes, error) {
+func (h *Health) serviceNodesTagFilter(ws memdb.WatchSet, s *state.Store, args *structs.ServiceSpecificRequest) (uint64, []structs.CheckServiceNode, error) {
 	// DEPRECATED (singular-service-tag) - remove this when backwards RPC compat
 	// with 1.2.x is not required.
 	// Agents < v1.3.0 populate the ServiceTag field. In this case,
@@ -273,6 +273,6 @@ func (h *Health) serviceNodesTagFilter(ws memdb.WatchSet, s *state.Store, args *
 	return s.CheckServiceTagNodes(ws, args.ServiceName, args.ServiceTags)
 }
 
-func (h *Health) serviceNodesDefault(ws memdb.WatchSet, s *state.Store, args *structs.ServiceSpecificRequest) (uint64, structs.CheckServiceNodes, error) {
+func (h *Health) serviceNodesDefault(ws memdb.WatchSet, s *state.Store, args *structs.ServiceSpecificRequest) (uint64, []structs.CheckServiceNode, error) {
 	return s.CheckServiceNodes(ws, args.ServiceName)
 }

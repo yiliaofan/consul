@@ -438,7 +438,6 @@ func TestInternal_EventFire_Token(t *testing.T) {
 		t.Fatalf("err: %s", err)
 	}
 }
-
 func TestInternal_ServiceDump(t *testing.T) {
 	t.Parallel()
 	dir1, s1 := testServer(t)
@@ -452,7 +451,7 @@ func TestInternal_ServiceDump(t *testing.T) {
 	// prep the cluster with some data we can use in our filters
 	registerTestCatalogEntries(t, codec)
 
-	doRequest := func(t *testing.T, filter string) structs.CheckServiceNodes {
+	doRequest := func(t *testing.T, filter string) []structs.CheckServiceNode {
 		t.Helper()
 		args := structs.DCSpecificRequest{
 			Datacenter:   "dc1",

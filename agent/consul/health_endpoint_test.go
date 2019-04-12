@@ -761,12 +761,12 @@ func TestHealth_ServiceNodes_NodeMetaFilter(t *testing.T) {
 
 	cases := []struct {
 		filters map[string]string
-		nodes   structs.CheckServiceNodes
+		nodes   []structs.CheckServiceNode
 	}{
 		// Get foo's check by its unique meta value
 		{
 			filters: map[string]string{"somekey": "somevalue"},
-			nodes: structs.CheckServiceNodes{
+			nodes: []structs.CheckServiceNode{
 				structs.CheckServiceNode{
 					Node:   &structs.Node{Node: "foo"},
 					Checks: structs.HealthChecks{&structs.HealthCheck{Name: "memory utilization"}},
@@ -776,7 +776,7 @@ func TestHealth_ServiceNodes_NodeMetaFilter(t *testing.T) {
 		// Get both foo/bar's checks by their common meta value
 		{
 			filters: map[string]string{"common": "1"},
-			nodes: structs.CheckServiceNodes{
+			nodes: []structs.CheckServiceNode{
 				structs.CheckServiceNode{
 					Node:   &structs.Node{Node: "bar"},
 					Checks: structs.HealthChecks{&structs.HealthCheck{Name: "disk space"}},
@@ -790,7 +790,7 @@ func TestHealth_ServiceNodes_NodeMetaFilter(t *testing.T) {
 		// Use an invalid meta value, should get empty result
 		{
 			filters: map[string]string{"invalid": "nope"},
-			nodes:   structs.CheckServiceNodes{},
+			nodes:   []structs.CheckServiceNode{},
 		},
 		// Use multiple filters to get foo's check
 		{
@@ -798,7 +798,7 @@ func TestHealth_ServiceNodes_NodeMetaFilter(t *testing.T) {
 				"somekey": "somevalue",
 				"common":  "1",
 			},
-			nodes: structs.CheckServiceNodes{
+			nodes: []structs.CheckServiceNode{
 				structs.CheckServiceNode{
 					Node:   &structs.Node{Node: "foo"},
 					Checks: structs.HealthChecks{&structs.HealthCheck{Name: "memory utilization"}},
