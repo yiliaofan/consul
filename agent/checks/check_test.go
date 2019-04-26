@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/consul/sdk/testutil/retry"
 	"github.com/hashicorp/consul/types"
 	uuid "github.com/hashicorp/go-uuid"
+	"github.com/stretchr/testify/require"
 )
 
 func uniqueID() string {
@@ -43,13 +44,20 @@ func TestCheckMonitor_Script(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.status, func(t *testing.T) {
 			notif := mock.NewNotify()
+			logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+			statusHandler := &StatusHandler{
+				FailuresBeforeCritical: 0,
+				Inner:                  notif,
+				Logger:                 logger,
+			}
 			check := &CheckMonitor{
 				Notify:        notif,
 				CheckID:       types.CheckID("foo"),
 				Script:        tt.script,
 				Interval:      25 * time.Millisecond,
-				Logger:        log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
 				OutputMaxSize: DefaultBufSize,
+				Logger:        logger,
+				StatusHandler: statusHandler,
 			}
 			check.Start()
 			defer check.Stop()
@@ -79,13 +87,19 @@ func TestCheckMonitor_Args(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.status, func(t *testing.T) {
 			notif := mock.NewNotify()
+			logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+			statusHandler := &StatusHandler{
+				Inner:  notif,
+				Logger: logger,
+			}
 			check := &CheckMonitor{
 				Notify:        notif,
 				CheckID:       types.CheckID("foo"),
 				ScriptArgs:    tt.args,
 				Interval:      25 * time.Millisecond,
-				Logger:        log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
 				OutputMaxSize: DefaultBufSize,
+				Logger:        logger,
+				StatusHandler: statusHandler,
 			}
 			check.Start()
 			defer check.Stop()
@@ -104,14 +118,20 @@ func TestCheckMonitor_Args(t *testing.T) {
 func TestCheckMonitor_Timeout(t *testing.T) {
 	// t.Parallel() // timing test. no parallel
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		Inner:  notif,
+		Logger: logger,
+	}
 	check := &CheckMonitor{
 		Notify:        notif,
 		CheckID:       types.CheckID("foo"),
 		ScriptArgs:    []string{"sh", "-c", "sleep 1 && exit 0"},
 		Interval:      50 * time.Millisecond,
 		Timeout:       25 * time.Millisecond,
-		Logger:        log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
 		OutputMaxSize: DefaultBufSize,
+		Logger:        logger,
+		StatusHandler: statusHandler,
 	}
 	check.Start()
 	defer check.Stop()
@@ -130,13 +150,19 @@ func TestCheckMonitor_Timeout(t *testing.T) {
 func TestCheckMonitor_RandomStagger(t *testing.T) {
 	// t.Parallel() // timing test. no parallel
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		Inner:  notif,
+		Logger: logger,
+	}
 	check := &CheckMonitor{
 		Notify:        notif,
 		CheckID:       types.CheckID("foo"),
 		ScriptArgs:    []string{"sh", "-c", "exit 0"},
 		Interval:      25 * time.Millisecond,
-		Logger:        log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
 		OutputMaxSize: DefaultBufSize,
+		Logger:        logger,
+		StatusHandler: statusHandler,
 	}
 	check.Start()
 	defer check.Stop()
@@ -156,13 +182,19 @@ func TestCheckMonitor_RandomStagger(t *testing.T) {
 func TestCheckMonitor_LimitOutput(t *testing.T) {
 	t.Parallel()
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		Inner:  notif,
+		Logger: logger,
+	}
 	check := &CheckMonitor{
 		Notify:        notif,
 		CheckID:       types.CheckID("foo"),
 		ScriptArgs:    []string{"od", "-N", "81920", "/dev/urandom"},
 		Interval:      25 * time.Millisecond,
-		Logger:        log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
 		OutputMaxSize: DefaultBufSize,
+		Logger:        logger,
+		StatusHandler: statusHandler,
 	}
 	check.Start()
 	defer check.Stop()
@@ -299,15 +331,20 @@ func TestCheckHTTP(t *testing.T) {
 			defer server.Close()
 
 			notif := mock.NewNotify()
+			logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+			statusHandler := &StatusHandler{
+				Inner:  notif,
+				Logger: logger,
+			}
+
 			check := &CheckHTTP{
-				Notify:        notif,
 				CheckID:       types.CheckID("foo"),
 				HTTP:          server.URL,
 				Method:        tt.method,
-				OutputMaxSize: DefaultBufSize,
 				Header:        tt.header,
 				Interval:      10 * time.Millisecond,
-				Logger:        log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+				Logger:        logger,
+				StatusHandler: statusHandler,
 			}
 			check.Start()
 			defer check.Stop()
@@ -339,15 +376,19 @@ func TestCheckMaxOutputSize(t *testing.T) {
 	defer server.Close()
 
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
 	maxOutputSize := 32
 	check := &CheckHTTP{
-		Notify:        notif,
 		CheckID:       types.CheckID("bar"),
 		HTTP:          server.URL + "/v1/agent/self",
 		Timeout:       timeout,
 		Interval:      2 * time.Millisecond,
-		Logger:        log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+		Logger:        logger,
 		OutputMaxSize: maxOutputSize,
+		StatusHandler: &StatusHandler{
+			Inner:  notif,
+			Logger: logger,
+		},
 	}
 
 	check.Start()
@@ -374,13 +415,19 @@ func TestCheckHTTPTimeout(t *testing.T) {
 	defer server.Close()
 
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		Inner:  notif,
+		Logger: logger,
+	}
+
 	check := &CheckHTTP{
-		Notify:   notif,
-		CheckID:  types.CheckID("bar"),
-		HTTP:     server.URL,
-		Timeout:  timeout,
-		Interval: 10 * time.Millisecond,
-		Logger:   log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+		CheckID:       types.CheckID("bar"),
+		HTTP:          server.URL,
+		Timeout:       timeout,
+		Interval:      10 * time.Millisecond,
+		Logger:        logger,
+		StatusHandler: statusHandler,
 	}
 
 	check.Start()
@@ -397,11 +444,17 @@ func TestCheckHTTPTimeout(t *testing.T) {
 
 func TestCheckHTTP_disablesKeepAlives(t *testing.T) {
 	t.Parallel()
+	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
 	check := &CheckHTTP{
 		CheckID:  types.CheckID("foo"),
 		HTTP:     "http://foo.bar/baz",
 		Interval: 10 * time.Second,
-		Logger:   log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+		Logger:   logger,
+		StatusHandler: &StatusHandler{
+			Inner:  notif,
+			Logger: logger,
+		},
 	}
 
 	check.Start()
@@ -435,13 +488,19 @@ func TestCheckHTTP_TLS_SkipVerify(t *testing.T) {
 	}
 
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		Inner:  notif,
+		Logger: logger,
+	}
+
 	check := &CheckHTTP{
-		Notify:          notif,
 		CheckID:         types.CheckID("skipverify_true"),
 		HTTP:            server.URL,
 		Interval:        25 * time.Millisecond,
-		Logger:          log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+		Logger:          logger,
 		TLSClientConfig: tlsClientConfig,
+		StatusHandler:   statusHandler,
 	}
 
 	check.Start()
@@ -469,13 +528,18 @@ func TestCheckHTTP_TLS_BadVerify(t *testing.T) {
 	}
 
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		Inner:  notif,
+		Logger: logger,
+	}
 	check := &CheckHTTP{
-		Notify:          notif,
 		CheckID:         types.CheckID("skipverify_false"),
 		HTTP:            server.URL,
 		Interval:        100 * time.Millisecond,
-		Logger:          log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+		Logger:          logger,
 		TLSClientConfig: tlsClientConfig,
+		StatusHandler:   statusHandler,
 	}
 
 	check.Start()
@@ -517,12 +581,17 @@ func mockTCPServer(network string) net.Listener {
 
 func expectTCPStatus(t *testing.T, tcp string, status string) {
 	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		Inner:  notif,
+		Logger: logger,
+	}
 	check := &CheckTCP{
-		Notify:   notif,
-		CheckID:  types.CheckID("foo"),
-		TCP:      tcp,
-		Interval: 10 * time.Millisecond,
-		Logger:   log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+		CheckID:       types.CheckID("foo"),
+		TCP:           tcp,
+		Interval:      10 * time.Millisecond,
+		Logger:        logger,
+		StatusHandler: statusHandler,
 	}
 	check.Start()
 	defer check.Stop()
@@ -533,6 +602,45 @@ func expectTCPStatus(t *testing.T, tcp string, status string) {
 		if got, want := notif.State("foo"), status; got != want {
 			r.Fatalf("got state %q want %q", got, want)
 		}
+	})
+}
+
+func TestStatusHandlerComponent(t *testing.T) {
+	t.Parallel()
+	checkID := types.CheckID("foo")
+	notif := mock.NewNotify()
+	logger := log.New(ioutil.Discard, uniqueID(), log.LstdFlags)
+	statusHandler := &StatusHandler{
+		FailuresBeforeCritical: 3,
+		Inner:                  notif,
+		Logger:                 logger,
+	}
+
+	// Set the initial status to passing
+	statusHandler.updateCheck(checkID, api.HealthPassing, "bar")
+
+	// Status should become critical after 3 failed checks only
+	statusHandler.updateCheck(checkID, api.HealthCritical, "bar")
+	statusHandler.updateCheck(checkID, api.HealthCritical, "bar")
+
+	retry.Run(t, func(r *retry.R) {
+		require.Equal(t, 1, notif.Updates("foo"))
+		require.Equal(t, api.HealthPassing, notif.State("foo"))
+	})
+
+	statusHandler.updateCheck(checkID, api.HealthCritical, "bar")
+
+	retry.Run(t, func(r *retry.R) {
+		require.Equal(t, 2, notif.Updates("foo"))
+		require.Equal(t, api.HealthCritical, notif.State("foo"))
+	})
+
+	// Status should be passing after only 1 passing check
+	statusHandler.updateCheck(checkID, api.HealthPassing, "bar")
+
+	retry.Run(t, func(r *retry.R) {
+		require.Equal(t, 3, notif.Updates("foo"))
+		require.Equal(t, api.HealthPassing, notif.State("foo"))
 	})
 }
 
@@ -830,14 +938,18 @@ func TestCheck_Docker(t *testing.T) {
 			}
 
 			notif, upd := mock.NewNotifyChan()
+			statusHandler := &StatusHandler{
+				Inner:  notif,
+				Logger: log.New(ioutil.Discard, uniqueID(), log.LstdFlags),
+			}
 			id := types.CheckID("chk")
 			check := &CheckDocker{
-				Notify:            notif,
 				CheckID:           id,
 				ScriptArgs:        []string{"/health.sh"},
 				DockerContainerID: "123",
 				Interval:          25 * time.Millisecond,
 				Client:            c,
+				StatusHandler:     statusHandler,
 			}
 			check.Start()
 			defer check.Stop()

@@ -2430,6 +2430,13 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 		if chkType.OutputMaxSize > 0 && maxOutputSize > chkType.OutputMaxSize {
 			maxOutputSize = chkType.OutputMaxSize
 		}
+
+		statusHandler := &checks.StatusHandler{
+			FailuresBeforeCritical: chkType.FailuresBeforeCritical,
+			Inner:                  a.State,
+			Logger:                 a.logger,
+		}
+
 		switch {
 
 		case chkType.IsTTL():
@@ -2469,7 +2476,6 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 			tlsClientConfig := a.tlsConfigurator.OutgoingTLSConfigForCheck(chkType.TLSSkipVerify)
 
 			http := &checks.CheckHTTP{
-				Notify:          a.State,
 				CheckID:         check.CheckID,
 				HTTP:            chkType.HTTP,
 				Header:          chkType.Header,
@@ -2479,6 +2485,7 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 				Logger:          a.logger,
 				OutputMaxSize:   maxOutputSize,
 				TLSClientConfig: tlsClientConfig,
+				StatusHandler:   statusHandler,
 			}
 			http.Start()
 			a.checkHTTPs[check.CheckID] = http
@@ -2495,12 +2502,12 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 			}
 
 			tcp := &checks.CheckTCP{
-				Notify:   a.State,
-				CheckID:  check.CheckID,
-				TCP:      chkType.TCP,
-				Interval: chkType.Interval,
-				Timeout:  chkType.Timeout,
-				Logger:   a.logger,
+				CheckID:       check.CheckID,
+				TCP:           chkType.TCP,
+				Interval:      chkType.Interval,
+				Timeout:       chkType.Timeout,
+				Logger:        a.logger,
+				StatusHandler: statusHandler,
 			}
 			tcp.Start()
 			a.checkTCPs[check.CheckID] = tcp
@@ -2522,13 +2529,13 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 			}
 
 			grpc := &checks.CheckGRPC{
-				Notify:          a.State,
 				CheckID:         check.CheckID,
 				GRPC:            chkType.GRPC,
 				Interval:        chkType.Interval,
 				Timeout:         chkType.Timeout,
 				Logger:          a.logger,
 				TLSClientConfig: tlsClientConfig,
+				StatusHandler:   statusHandler,
 			}
 			grpc.Start()
 			a.checkGRPCs[check.CheckID] = grpc
@@ -2555,7 +2562,6 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 			}
 
 			dockerCheck := &checks.CheckDocker{
-				Notify:            a.State,
 				CheckID:           check.CheckID,
 				DockerContainerID: chkType.DockerContainerID,
 				Shell:             chkType.Shell,
@@ -2563,6 +2569,7 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 				Interval:          chkType.Interval,
 				Logger:            a.logger,
 				Client:            a.dockerClient,
+				StatusHandler:     statusHandler,
 			}
 			if prev := a.checkDockers[check.CheckID]; prev != nil {
 				prev.Stop()
@@ -2588,6 +2595,7 @@ func (a *Agent) addCheck(check *structs.HealthCheck, chkType *structs.CheckType,
 				Timeout:       chkType.Timeout,
 				Logger:        a.logger,
 				OutputMaxSize: maxOutputSize,
+				StatusHandler: statusHandler,
 			}
 			monitor.Start()
 			a.checkMonitors[check.CheckID] = monitor

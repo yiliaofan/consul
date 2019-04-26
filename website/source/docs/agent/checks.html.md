@@ -364,3 +364,19 @@ key in your configuration file.
   ]
 }
 ```
+
+## Failures before critical
+
+A check may be set to become critical only if a specified number of successive
+checks return critical in a row. Status will stay identical as before until
+the threshold is reached.
+This feature is available for HTTP, TCP, gRPC, Docker & Monitor checks.
+
+```javascript
+{
+  "checks": {
+    ...
+    "failures_before_critical" : 3
+  },
+}
+```
