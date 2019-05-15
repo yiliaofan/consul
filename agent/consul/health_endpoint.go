@@ -2,7 +2,9 @@ package consul
 
 import (
 	"fmt"
+	"hash/fnv"
 	"sort"
+	"time"
 
 	"github.com/armon/go-metrics"
 	"github.com/hashicorp/consul/agent/consul/state"
@@ -140,6 +142,40 @@ func (h *Health) ServiceChecks(args *structs.ServiceSpecificRequest,
 		})
 }
 
+func selectNodesBySource(source string, limit int, nodes *structs.IndexedCheckServiceNodes) *structs.IndexedCheckServiceNodes {
+	h := fnv.New32()
+	h.Write([]byte(source))
+	nodeIdx := int(h.Sum32()) + int(time.Since(time.Now().Truncate(time.Hour))*24/(15*time.Minute))
+
+	start := nodeIdx % len(nodes.Nodes)
+	end := (nodeIdx + limit) % len(nodes.Nodes)
+
+	if end >= start {
+		nodes.Nodes = nodes.Nodes[start:end]
+	} else {
+		nodes.Nodes = append(nodes.Nodes[start:], nodes.Nodes[:end]...)
+	}
+
+	idx := uint64(0)
+	for _, n := range nodes.Nodes {
+		if n.Node.ModifyIndex > idx {
+			idx = n.Node.ModifyIndex
+		}
+		if n.Service.ModifyIndex > idx {
+			idx = n.Node.ModifyIndex
+		}
+		for _, c := range n.Checks {
+			if c.ModifyIndex > idx {
+				idx = c.ModifyIndex
+			}
+		}
+	}
+
+	nodes.Index = idx
+
+	return nodes
+}
+
 // ServiceNodes returns all the nodes registered as part of a service including health info
 func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *structs.IndexedCheckServiceNodes) error {
 	if done, err := h.srv.forward("Health.ServiceNodes", args, args, reply); done {
@@ -205,6 +241,10 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 				return err
 			}
 			reply.Nodes = raw.(structs.CheckServiceNodes)
+
+			if args.Limit > 0 {
+				selectNodesBySource(args.Source.Node, args.Limit, reply)
+			}
 
 			return h.srv.sortNodesByDistanceFrom(args.Source, reply.Nodes)
 		})

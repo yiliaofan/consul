@@ -175,6 +175,10 @@ type QueryOptions struct {
 	// Filter specifies the go-bexpr filter expression to be used for
 	// filtering the data prior to returning a response
 	Filter string
+
+	Limit int
+
+	OrderBy string
 }
 
 // IsRead is always true for QueryOption.

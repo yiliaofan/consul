@@ -168,6 +168,16 @@ func (s *HTTPServer) healthServiceNodes(resp http.ResponseWriter, req *http.Requ
 		args.TagFilter = true
 	}
 
+	if params.Get("limit") != "" {
+		limit, err := strconv.Atoi(params.Get("limit"))
+		if err != nil {
+			fmt.Fprintf(resp, "Bad limit: %s", err)
+			return nil, nil
+		}
+
+		args.Limit = limit
+	}
+
 	// Determine the prefix
 	prefix := "/v1/health/service/"
 	if connect {
