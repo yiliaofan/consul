@@ -174,8 +174,8 @@ message Node {
 
 // Weights represent the weight used by DNS for a given status
 message Weights {
-  int32 Passing = 1 [ (gogoproto.casttype) = "int" ];
-  int32 Warning = 2 [ (gogoproto.casttype) = "int" ];
+  int32 Passing = 1 [ (gogoproto.casttype) = "int", (gogoproto.jsontag) = "" ];
+  int32 Warning = 2 [ (gogoproto.casttype) = "int", (gogoproto.jsontag) = "" ];
 }
 
 // CheckType is used to create either the CheckMonitor or the CheckTTL.
