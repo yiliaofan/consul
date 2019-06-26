@@ -192,8 +192,7 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 		return err
 	}
 
-
-	err := h.srv.sharedBlockingQuery(
+	err = h.srv.sharedBlockingQuery(
 		args,
 		reply,
 		&args.QueryOptions,
@@ -229,6 +228,7 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 	if err != nil {
 		return err
 	}
+	reply.Nodes = raw.([]structs.CheckServiceNode)
 	err = h.srv.sortNodesByDistanceFrom(args.Source, reply.Nodes)
 	if err != nil {
 		return err

@@ -6479,7 +6479,7 @@ func TestDNS_ReloadConfig_DuringQuery(t *testing.T) {
 	m := MockPreparedQuery{
 		executeFn: func(args *structs.PreparedQueryExecuteRequest, reply *structs.PreparedQueryExecuteResponse) error {
 			time.Sleep(100 * time.Millisecond)
-			reply.Nodes = structs.CheckServiceNodes{
+			reply.Nodes = []structs.CheckServiceNode{
 				{
 					Node: &structs.Node{
 						ID:      "my_node",

@@ -745,7 +745,7 @@ func TestHealthServiceNodes_Filter(t *testing.T) {
 	assertIndex(t, resp)
 
 	// Should be a non-nil empty list
-	nodes := obj.(structs.CheckServiceNodes)
+	nodes := obj.([]structs.CheckServiceNode)
 	require.Empty(t, nodes)
 
 	args := &structs.RegisterRequest{
@@ -789,7 +789,7 @@ func TestHealthServiceNodes_Filter(t *testing.T) {
 	assertIndex(t, resp)
 
 	// Should be a non-nil empty list for checks
-	nodes = obj.(structs.CheckServiceNodes)
+	nodes = obj.([]structs.CheckServiceNode)
 	require.Len(t, nodes, 1)
 	require.Len(t, nodes[0].Checks, 1)
 }
@@ -1113,7 +1113,7 @@ func TestHealthConnectServiceNodes_Filter(t *testing.T) {
 	require.NoError(t, err)
 	assertIndex(t, resp)
 
-	nodes := obj.(structs.CheckServiceNodes)
+	nodes := obj.([]structs.CheckServiceNode)
 	require.Len(t, nodes, 1)
 	require.Equal(t, structs.ServiceKindConnectProxy, nodes[0].Service.Kind)
 	require.Equal(t, args.Service.Address, nodes[0].Service.Address)

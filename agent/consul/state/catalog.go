@@ -2175,7 +2175,7 @@ func (s *Store) NodeDump(ws memdb.WatchSet) (uint64, structs.NodeDump, error) {
 	return s.parseNodes(tx, ws, idx, nodes)
 }
 
-func (s *Store) ServiceDump(ws memdb.WatchSet) (uint64, structs.CheckServiceNodes, error) {
+func (s *Store) ServiceDump(ws memdb.WatchSet) (uint64, []structs.CheckServiceNode, error) {
 	tx := s.db.Txn(false)
 	defer tx.Abort()
 

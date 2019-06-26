@@ -473,6 +473,11 @@ type ServiceNode struct {
 	RaftIndex `bexpr:"-"`
 }
 
+// IsSidecarProxy returns true if the NodeService is a sidecar proxy.
+func (s *NodeService) IsSidecarProxy() bool {
+	return s.Kind == ServiceKindConnectProxy && s.Proxy.DestinationServiceID != ""
+}
+
 // PartialClone() returns a clone of the given service node, minus the node-
 // related fields that get filled in later, Address and TaggedAddresses.
 func (s *ServiceNode) PartialClone() *ServiceNode {
