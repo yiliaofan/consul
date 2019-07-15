@@ -94,7 +94,7 @@ func (c *RPCClient) grpcConn(server *metadata.Server) (*grpc.ClientConn, error) 
 	c.grpcConnsLock.Lock()
 	defer c.grpcConnsLock.Unlock()
 
-	co, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithDialer(dialGRPC))
+	co, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithDialer(dialGRPC), grpc.WithDisableRetry())
 	if err != nil {
 		return nil, err
 	}
