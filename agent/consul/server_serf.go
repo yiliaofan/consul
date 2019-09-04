@@ -56,7 +56,10 @@ func (s *Server) setupSerf(conf *serf.Config, ch chan serf.Event, path string, w
 	conf.Tags["vsn_max"] = fmt.Sprintf("%d", ProtocolVersionMax)
 	conf.Tags["raft_vsn"] = fmt.Sprintf("%d", s.config.RaftConfig.ProtocolVersion)
 	conf.Tags["build"] = s.config.Build
+
 	conf.Tags["grpc_enabled"] = fmt.Sprintf("%v", s.config.EnableGRPC)
+	conf.Tags["criteo_grpc_enabled"] = fmt.Sprintf("%v", s.config.EnableGRPC)
+
 	conf.Tags["port"] = fmt.Sprintf("%d", listener.Addr().(*net.TCPAddr).Port)
 	if s.config.Bootstrap {
 		conf.Tags["bootstrap"] = "1"

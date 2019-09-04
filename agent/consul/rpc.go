@@ -137,7 +137,7 @@ func (s *Server) handleConn(conn net.Conn, isTLS bool) {
 	case pool.RPCSnapshot:
 		s.handleSnapshotConn(conn)
 
-	case pool.RPCGRPC:
+	case pool.RPCGRPC, pool.RPCCriteoGRPC:
 		if !s.config.EnableGRPC {
 			s.logger.Printf("[ERR] consul.rpc: received a GRPC connection but GRPC is disabled on this server")
 			return

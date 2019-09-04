@@ -13,4 +13,5 @@ const (
 	RPCSnapshot            = 5
 	RPCGossip              = 6
 	RPCGRPC                = 7
+	RPCCriteoGRPC          = 99
 )
