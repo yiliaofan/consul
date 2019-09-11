@@ -33,9 +33,15 @@ func dialGRPC(addr string, _ time.Duration) (net.Conn, error) {
 	return conn, nil
 }
 
+type connSlot struct {
+	conn *grpc.ClientConn
+	err  error
+	done chan struct{}
+}
+
 type RPCClient struct {
 	rpcPool       *pool.ConnPool
-	grpcConns     map[string]*grpc.ClientConn
+	grpcConns     map[string]*connSlot
 	grpcConnsLock sync.RWMutex
 	logger        *log.Logger
 }
@@ -50,7 +56,7 @@ func NewRPCClient(logger *log.Logger, config *Config, tlsConfigurator *tlsutil.C
 			TLSWrapper: tlsConfigurator.OutgoingRPCWrapper(),
 			ForceTLS:   config.VerifyOutgoing,
 		},
-		grpcConns: make(map[string]*grpc.ClientConn),
+		grpcConns: make(map[string]*connSlot),
 		logger:    logger,
 	}
 }
@@ -84,23 +90,38 @@ func (c *RPCClient) grpcConn(server *metadata.Server) (*grpc.ClientConn, error) 
 	host, _, _ := net.SplitHostPort(server.Addr.String())
 	addr := fmt.Sprintf("%s:%d", host, server.Port)
 
-	c.grpcConnsLock.RLock()
-	conn, ok := c.grpcConns[addr]
-	c.grpcConnsLock.RUnlock()
-	if ok {
-		return conn, nil
-	}
+	var isFirstRequest bool
 
 	c.grpcConnsLock.Lock()
-	defer c.grpcConnsLock.Unlock()
+	existing, ok := c.grpcConns[addr]
+	if !ok {
+		existing = &connSlot{
+			done: make(chan struct{}),
+		}
+		c.grpcConns[addr] = existing
+		isFirstRequest = true
+	}
+	c.grpcConnsLock.Unlock()
 
-	co, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithDialer(dialGRPC), grpc.WithDisableRetry())
-	if err != nil {
-		return nil, err
+	if !isFirstRequest {
+		<-existing.done
+		return existing.conn, existing.err
 	}
 
-	c.grpcConns[addr] = co
-	return co, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, addr,
+		grpc.WithInsecure(),
+		grpc.WithDialer(dialGRPC),
+		grpc.WithDisableRetry(),
+		grpc.WithBlock(),
+	)
+	existing.conn = conn
+	existing.err = err
+	close(existing.done)
+
+	return conn, err
+
 }
 
 func (c *RPCClient) grpcPath(p string) string {
